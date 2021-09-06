@@ -4,9 +4,20 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+
+	"github.com/xpy123993/router/router/proto"
 )
 
 const MaxChannelNameLength = 256
+
+// RouterFrame is the packet using between Router.
+type RouterFrame struct {
+	Type    byte
+	Token   string
+	Channel string
+}
+
+var nopFrame = RouterFrame{Type: proto.Nop}
 
 func writeString(message *string, writer io.Writer) error {
 	if err := binary.Write(writer, binary.BigEndian, uint16(len(*message))); err != nil {
@@ -38,18 +49,13 @@ func readString(reader io.Reader) (string, error) {
 }
 
 func writeFrame(frame *RouterFrame, writer io.Writer) error {
-	writer.Write([]byte{frame.Type})
-	switch frame.Type {
-	case Nop:
-	case Close:
-	case Listen:
-		return writeString(&frame.Channel, writer)
-	case Bridge:
-		return writeString(&frame.Channel, writer)
-	case Dial:
-		return writeString(&frame.Channel, writer)
+	if _, err := writer.Write([]byte{frame.Type}); err != nil {
+		return err
 	}
-	return nil
+	if err := writeString(&frame.Token, writer); err != nil {
+		return err
+	}
+	return writeString(&frame.Channel, writer)
 }
 
 func readFrame(frame *RouterFrame, reader io.Reader) error {
@@ -61,26 +67,13 @@ func readFrame(frame *RouterFrame, reader io.Reader) error {
 	}
 	frame.Type = buf[0]
 	var err error
-	switch frame.Type {
-	case Nop:
-		frame.Channel = ""
-	case Close:
-		frame.Channel = ""
-	case Listen:
-		frame.Channel, err = readString(reader)
-		if err != nil {
-			return err
-		}
-	case Bridge:
-		frame.Channel, err = readString(reader)
-		if err != nil {
-			return err
-		}
-	case Dial:
-		frame.Channel, err = readString(reader)
-		if err != nil {
-			return err
-		}
+	frame.Token, err = readString(reader)
+	if err != nil {
+		return err
+	}
+	frame.Channel, err = readString(reader)
+	if err != nil {
+		return err
 	}
 	return nil
 }

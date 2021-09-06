@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"time"
 
 	"github.com/armon/go-socks5"
 	"github.com/xpy123993/router/router"
@@ -24,7 +25,7 @@ var (
 
 const proxyChannel = "proxy"
 
-func loadCertificateFromFlags() (*x509.CertPool, *tls.Certificate, error) {
+func loadEmbededCertificates() (*x509.CertPool, *tls.Certificate, error) {
 	certificate, err := tls.X509KeyPair(crt, key)
 	if err != nil {
 		return nil, nil, fmt.Errorf("while loading certificate: %v", err)
@@ -34,20 +35,42 @@ func loadCertificateFromFlags() (*x509.CertPool, *tls.Certificate, error) {
 	return pool, &certificate, nil
 }
 
+type tokenAuthority struct{}
+
+func (*tokenAuthority) CheckPermission(frame *router.RouterFrame) bool {
+	return true
+}
+
 func routerMode() {
-	caPool, certificate, err := loadCertificateFromFlags()
+	caPool, certificate, err := loadEmbededCertificates()
 	if err != nil {
 		log.Fatalf("error while loading certificate: %v", err)
 	}
-	router.ListenAndServeRouting(*servingAddress, caPool, certificate)
+	serviceRouter := router.NewRouter(router.RouterOption{
+		TokenAuthority:            &tokenAuthority{},
+		InflightPoolMaxSize:       16,
+		DialConnectionTimeout:     3 * time.Second,
+		ListenConnectionKeepAlive: 30 * time.Second,
+		TLSConfig: &tls.Config{
+			Certificates: []tls.Certificate{*certificate},
+			ClientAuth:   tls.RequireAndVerifyClientCert,
+			RootCAs:      caPool,
+			ClientCAs:    caPool,
+		},
+	})
+	serviceRouter.ListenAndServe(*servingAddress)
 }
 
 func proxyMode() {
-	caPool, certificate, err := loadCertificateFromFlags()
+	caPool, certificate, err := loadEmbededCertificates()
 	if err != nil {
 		log.Fatalf("error while loading certificate: %v", err)
 	}
-	listener, err := router.ListenChannel(*servingAddress, proxyChannel, ServerName, caPool, certificate)
+	listener, err := router.NewListener(*servingAddress, "", proxyChannel, &tls.Config{
+		Certificates: []tls.Certificate{*certificate},
+		RootCAs:      caPool,
+		ServerName:   ServerName,
+	})
 	if err != nil {
 		log.Fatalf("error while listening on proxy channel: %v", err)
 	}
@@ -61,7 +84,7 @@ func proxyMode() {
 }
 
 func proxyClientMode() {
-	caPool, certificate, err := loadCertificateFromFlags()
+	caPool, certificate, err := loadEmbededCertificates()
 	if err != nil {
 		log.Fatalf("error while loading certificate: %v", err)
 	}
@@ -69,6 +92,11 @@ func proxyClientMode() {
 	if err != nil {
 		log.Fatalf("error while listening on proxy channel: %v", err)
 	}
+	routerClient := router.NewClient(*servingAddress, "", &tls.Config{
+		RootCAs:      caPool,
+		Certificates: []tls.Certificate{*certificate},
+		ServerName:   ServerName,
+	})
 	for {
 		client, err := listener.Accept()
 		if err != nil {
@@ -77,7 +105,7 @@ func proxyClientMode() {
 		}
 		go func(client net.Conn) {
 			defer client.Close()
-			conn, err := router.DialChannel(*servingAddress, proxyChannel, ServerName, caPool, certificate)
+			conn, err := routerClient.Dial(proxyChannel)
 			if err != nil {
 				log.Println(err.Error())
 				return

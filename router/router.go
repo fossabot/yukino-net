@@ -2,44 +2,77 @@ package router
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"sync"
 	"time"
+
+	"github.com/xpy123993/router/router/proto"
 )
 
 const (
-	Dial   = byte(iota)
-	Listen = byte(iota)
-	Bridge = byte(iota)
-	Nop    = byte(iota)
-	Close  = byte(iota)
-
 	// InflightPoolMaxSize specifies the maximum pre-allocate connections for each receiver.
-	InflightPoolMaxSize       = 16
-	DialConnectionTimeout     = 2 * time.Second
-	ListenConnectionKeepAlive = 20 * time.Second
+	DefaultInflightPoolMaxSize       = 16
+	DefaultDialConnectionTimeout     = 2 * time.Second
+	DefaultListenConnectionKeepAlive = 20 * time.Second
 )
 
-// RouterFrame is the packet using between Router.
-type RouterFrame struct {
-	Type    byte
-	Channel string
+// Authority will b e used by the router for ACL control.
+type Authority interface {
+	// Returns if the permission check is passed for `frame`.
+	CheckPermission(frame *RouterFrame) bool
+}
+
+type noPermissionCheckAuthority struct{}
+
+func (*noPermissionCheckAuthority) CheckPermission(*RouterFrame) bool { return true }
+
+// RouterOption specifies a set of options being used by the router.
+type RouterOption struct {
+	// TokenAuthority is the authority used for checking permissions.
+	TokenAuthority Authority
+	// InflightPoolMaxSize specifies how many free connections can be pre-allocated to serve future requests.
+	InflightPoolMaxSize int
+	// DialConnectionTimeout specifies the timeout when a dialer connects to a listener.
+	DialConnectionTimeout time.Duration
+	// ListenConnectionKeepAlive specfies the health check interval.
+	ListenConnectionKeepAlive time.Duration
+	// TLSConfig specifies the TLS setting, if empty, the traffic will not be encrypted.
+	TLSConfig *tls.Config
+}
+
+var DefaultRouterOption = RouterOption{
+	TokenAuthority:            &noPermissionCheckAuthority{},
+	InflightPoolMaxSize:       DefaultInflightPoolMaxSize,
+	DialConnectionTimeout:     DefaultDialConnectionTimeout,
+	ListenConnectionKeepAlive: DefaultListenConnectionKeepAlive,
 }
 
 // Router proxies requests.
 type Router struct {
+	option        RouterOption
 	mu            sync.RWMutex
 	receiverTable map[string]*receiverConnection // control channel to the receiver.
 }
 
 // NewRouter creates a Router structure.
-func NewRouter() *Router {
+func NewRouter(option RouterOption) *Router {
 	return &Router{
 		mu:            sync.RWMutex{},
 		receiverTable: make(map[string]*receiverConnection),
+		option:        option,
+	}
+}
+
+// NewDefaultRouter creates a router with default option.
+func NewDefaultRouter() *Router {
+	return &Router{
+		mu:            sync.RWMutex{},
+		receiverTable: make(map[string]*receiverConnection),
+		option:        DefaultRouterOption,
 	}
 }
 
@@ -48,7 +81,7 @@ func NewRouter() *Router {
 func (router *Router) handleListen(channel string, conn net.Conn) error {
 	controlConnection := receiverConnection{
 		routerConnection:   *newConn(conn),
-		inflightConnection: make(chan *routerConnection, InflightPoolMaxSize),
+		inflightConnection: make(chan *routerConnection, router.option.InflightPoolMaxSize),
 		backfillSig:        sync.Mutex{},
 	}
 	controlConnection.cond = sync.NewCond(&controlConnection.backfillSig)
@@ -67,8 +100,8 @@ func (router *Router) handleListen(channel string, conn net.Conn) error {
 		router.mu.Unlock()
 	}()
 
-	controlConnection.SpawnConnectionChecker(ListenConnectionKeepAlive)
-	controlConnection.SpawnBackfillInvoker()
+	controlConnection.SpawnConnectionChecker(router.option.ListenConnectionKeepAlive)
+	controlConnection.SpawnBackfillInvoker(router.option.InflightPoolMaxSize)
 
 	if !controlConnection.probe() {
 		return nil
@@ -78,7 +111,7 @@ func (router *Router) handleListen(channel string, conn net.Conn) error {
 	if err := readFrame(&frame, controlConnection.Connection); err != nil {
 		return err
 	}
-	if frame.Type == Close {
+	if frame.Type == proto.Close {
 		controlConnection.close()
 		return nil
 	}
@@ -93,9 +126,9 @@ func (router *Router) handleDial(frame *RouterFrame, conn net.Conn) error {
 	defer dialConnection.close()
 	if dialConn, ok := conn.(*net.TCPConn); ok {
 		dialConn.SetKeepAlive(true)
-		dialConn.SetKeepAlivePeriod(DialConnectionTimeout)
+		dialConn.SetKeepAlivePeriod(router.option.DialConnectionTimeout)
 	}
-	conn.SetDeadline(time.Now().Add(DialConnectionTimeout))
+	conn.SetDeadline(time.Now().Add(router.option.DialConnectionTimeout))
 	router.mu.Lock()
 
 	receiverChan, exist := router.receiverTable[frame.Channel]
@@ -126,12 +159,16 @@ func (router *Router) handleDial(frame *RouterFrame, conn net.Conn) error {
 	receiverChan.signalBackfill()
 
 	if err := writeFrame(&RouterFrame{
-		Type: Bridge,
+		Type:    proto.Bridge,
+		Token:   "",
+		Channel: "",
 	}, conn); err != nil {
 		return err
 	}
 	peerConn.writeFrame(&RouterFrame{
-		Type: Bridge,
+		Type:    proto.Bridge,
+		Token:   "",
+		Channel: "",
 	})
 
 	ctx, cancelFn := context.WithCancel(context.Background())
@@ -162,7 +199,7 @@ func (router *Router) handleBridge(frame *RouterFrame, conn net.Conn) error {
 	}
 
 	select {
-	case <-time.After(DialConnectionTimeout):
+	case <-time.After(router.option.DialConnectionTimeout):
 		connection.close()
 		return nil
 	case <-receiverChannel.Closed:
@@ -183,13 +220,16 @@ func (router *Router) handleConnection(conn net.Conn) error {
 	if err := readFrame(&frame, conn); err != nil {
 		return fmt.Errorf("closing connection from %v due to error: %v", conn.RemoteAddr(), err)
 	}
+	if !router.option.TokenAuthority.CheckPermission(&frame) {
+		return fmt.Errorf("permission denied: frame: %v", frame)
+	}
 
 	switch frame.Type {
-	case Listen:
+	case proto.Listen:
 		return router.handleListen(frame.Channel, conn)
-	case Bridge:
+	case proto.Bridge:
 		return router.handleBridge(&frame, conn)
-	case Dial:
+	case proto.Dial:
 		return router.handleDial(&frame, conn)
 	}
 	return nil
@@ -208,4 +248,19 @@ func (router *Router) Serve(listener net.Listener) error {
 			}
 		}()
 	}
+}
+
+// ListenAndServe will try to listen on the specified address.
+func (router *Router) ListenAndServe(Address string) error {
+	var err error
+	var listener net.Listener
+	if router.option.TLSConfig != nil {
+		listener, err = tls.Listen("tcp", Address, router.option.TLSConfig)
+	} else {
+		listener, err = net.Listen("tcp", Address)
+	}
+	if err != nil {
+		return err
+	}
+	return router.Serve(listener)
 }

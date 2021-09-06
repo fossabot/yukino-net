@@ -6,45 +6,58 @@ import (
 	"io"
 	"log"
 	"net"
+
+	"github.com/xpy123993/router/router/proto"
 )
 
 // RouterClient implements a Dial method to join the Router network.
 type RouterClient struct {
+	// The public address of the Router.
 	routerAddress string
-	channel       string
+	// token used for permission validation.
+	token string
+	// If not nil, the client will use tls.Dial to connect to the Router.
+	tlsConfig *tls.Config
 }
 
-// NewClient creates a RouterClient structure.
-func NewClient(RouterAddress string, Channel string) *RouterClient {
+// NewClientWithoutAuth creates a RouterClient structure.
+func NewClientWithoutAuth(RouterAddress string) *RouterClient {
 	return &RouterClient{
 		routerAddress: RouterAddress,
-		channel:       Channel,
 	}
 }
 
-// DialWithConn initiates dial protocol from existing connection.
-// The connection can be from a tls.
-func (client *RouterClient) DialWithConn(TargetChannel string, Conn net.Conn) error {
-	if err := writeFrame(&RouterFrame{
-		Type:    Dial,
-		Channel: TargetChannel,
-	}, Conn); err != nil {
-		return err
+// NewClient creates a RouterClient with permision settings.
+func NewClient(RouterAddress string, Token string, TLSConfig *tls.Config) *RouterClient {
+	return &RouterClient{
+		routerAddress: RouterAddress,
+		token:         Token,
+		tlsConfig:     TLSConfig,
 	}
-	frame := RouterFrame{}
-	if err := readFrame(&frame, Conn); err != nil {
-		return err
-	}
-	return nil
 }
 
 // Dial initiaites a dial request into the Route network.
 func (client *RouterClient) Dial(TargetChannel string) (net.Conn, error) {
-	conn, err := net.Dial("tcp", client.routerAddress)
+	var conn net.Conn
+	var err error
+
+	if client.tlsConfig != nil {
+		conn, err = tls.Dial("tcp", client.routerAddress, client.tlsConfig)
+	} else {
+		conn, err = net.Dial("tcp", client.routerAddress)
+	}
 	if err != nil {
 		return nil, err
 	}
-	if err := client.DialWithConn(TargetChannel, conn); err != nil {
+	if err := writeFrame(&RouterFrame{
+		Type:    proto.Dial,
+		Token:   client.token,
+		Channel: TargetChannel,
+	}, conn); err != nil {
+		return nil, err
+	}
+	frame := RouterFrame{}
+	if err := readFrame(&frame, conn); err != nil {
 		return nil, err
 	}
 	return conn, nil
@@ -52,10 +65,11 @@ func (client *RouterClient) Dial(TargetChannel string) (net.Conn, error) {
 
 // RouterListener implements a net.Listener interface on Router network.
 type RouterListener struct {
-	routerAddress  string
-	channel        string
-	controlConn    net.Conn
-	connInitialier func(string, string) (net.Conn, error)
+	routerAddress string
+	channel       string
+	token         string
+	controlConn   net.Conn
+	tlsConfig     *tls.Config
 }
 
 // RouterAddress represents an address in Router network.
@@ -76,41 +90,56 @@ func (address *RouterAddress) String() string {
 // NewRouterListenerWithConn creates a RouterListener structure.
 // Conn here can be a just initialized connectiono from TLS.
 func NewRouterListenerWithConn(
-	RouterAddress string, Channel string, ConnInitialier func(string, string) (net.Conn, error)) (*RouterListener, error) {
-	conn, err := ConnInitialier("tcp", RouterAddress)
-	if tlsConn, ok := conn.(*tls.Conn); ok {
-		log.Printf("connection is built above TLS")
-		log.Printf("CipherSuite: %s", tls.CipherSuiteName(tlsConn.ConnectionState().CipherSuite))
+	RouterAddress string, Token string, Channel string, TLSConfig *tls.Config) (*RouterListener, error) {
+	routerListener := RouterListener{
+		routerAddress: RouterAddress,
+		channel:       Channel,
+		token:         Token,
+		tlsConfig:     TLSConfig,
 	}
+	var err error
+	routerListener.controlConn, err = routerListener.createConnection("tcp", RouterAddress)
 	if err != nil {
 		return nil, err
 	}
+	if tlsConn, ok := routerListener.controlConn.(*tls.Conn); ok {
+		log.Printf("connection is built above TLS")
+		log.Printf("CipherSuite: %s", tls.CipherSuiteName(tlsConn.ConnectionState().CipherSuite))
+	}
 	if err := writeFrame(&RouterFrame{
-		Type:    Listen,
+		Type:    proto.Listen,
+		Token:   Token,
 		Channel: Channel,
-	}, conn); err != nil {
+	}, routerListener.controlConn); err != nil {
 		return nil, err
 	}
 	frame := RouterFrame{}
-	if err := readFrame(&frame, conn); err != nil {
+	if err := readFrame(&frame, routerListener.controlConn); err != nil {
 		return nil, err
 	}
-	return &RouterListener{
-		routerAddress:  RouterAddress,
-		channel:        Channel,
-		controlConn:    conn,
-		connInitialier: ConnInitialier,
-	}, nil
+	return &routerListener, nil
 }
 
-// NewRouterListener creates a RouterListener structure and try to handshake with Router in `RouterAddress`.
-func NewRouterListener(RouterAddress string, Channel string) (*RouterListener, error) {
-	return NewRouterListenerWithConn(RouterAddress, Channel, net.Dial)
+func (listener *RouterListener) createConnection(network, address string) (net.Conn, error) {
+	if listener.tlsConfig != nil {
+		return tls.Dial(network, address, listener.tlsConfig)
+	}
+	return net.Dial(network, address)
+}
+
+// NewListenerWithoutAuth creates a RouterListener structure and try to handshake with Router in `RouterAddress`.
+func NewListenerWithoutAuth(RouterAddress string, Channel string) (*RouterListener, error) {
+	return NewRouterListenerWithConn(RouterAddress, "", Channel, nil)
+}
+
+// NewListener creates a RouterListener.
+func NewListener(RouterAddress, Token, Channel string, TLSConfig *tls.Config) (*RouterListener, error) {
+	return NewRouterListenerWithConn(RouterAddress, Token, Channel, TLSConfig)
 }
 
 // Close closes the listener.
 func (listener *RouterListener) Close() error {
-	writeFrame(&RouterFrame{Type: Close}, listener.controlConn)
+	writeFrame(&RouterFrame{Type: proto.Close}, listener.controlConn)
 	return listener.controlConn.Close()
 }
 
@@ -131,19 +160,20 @@ func (listener *RouterListener) Accept() (net.Conn, error) {
 			}
 			continue
 		}
-		if frame.Type != Nop {
+		if frame.Type != proto.Nop {
 			break
 		}
 	}
-	if frame.Type != Bridge {
+	if frame.Type != proto.Bridge {
 		return nil, fmt.Errorf("server returns invalid request type: %d, expect bridge: %v", frame.Type, frame)
 	}
-	conn, err := listener.connInitialier("tcp", listener.routerAddress)
+	conn, err := listener.createConnection("tcp", listener.routerAddress)
 	if err != nil {
 		return nil, fmt.Errorf("cannot fork connection request: %v", err)
 	}
 	if err := writeFrame(&RouterFrame{
-		Type:    Bridge,
+		Type:    proto.Bridge,
+		Token:   listener.token,
 		Channel: listener.channel,
 	}, conn); err != nil {
 		return nil, fmt.Errorf("failed to handshake: %v", err)

@@ -1,6 +1,8 @@
 package router_test
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net"
@@ -8,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/xpy123993/router/router"
+	"github.com/xpy123993/router/router/common"
+	"github.com/xpy123993/router/router/proto"
 )
 
 func acceptAndEqual(listener net.Listener, message string) error {
@@ -28,7 +32,7 @@ func acceptAndEqual(listener net.Listener, message string) error {
 }
 
 func dialAndSend(client *router.RouterClient, channel string, message []byte) error {
-	conn, err := client.Dial("test-channel")
+	conn, err := client.Dial(channel)
 	if err != nil {
 		return err
 	}
@@ -39,46 +43,137 @@ func dialAndSend(client *router.RouterClient, channel string, message []byte) er
 	return nil
 }
 
-func TestE2E(t *testing.T) {
+type permissionDeniedAuthority struct{}
+type myTokenAuthrority struct{}
+
+func (*permissionDeniedAuthority) CheckPermission(*router.RouterFrame) bool { return false }
+func (*myTokenAuthrority) CheckPermission(frame *router.RouterFrame) bool {
+	switch frame.Type {
+	case proto.Close:
+		return true
+	case proto.Nop:
+		return true
+	case proto.Bridge:
+		return frame.Token == "my-token"
+	case proto.Listen:
+		return frame.Token == "my-token"
+	case proto.Dial:
+		return frame.Token == "my-token"
+	}
+	return false
+}
+
+func TestPermissionDenied(t *testing.T) {
 	t.Parallel()
 	listener, err := net.Listen("tcp", ":0")
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
 	}
-
-	pending := sync.WaitGroup{}
-	testRouter := router.NewRouter()
+	option := router.DefaultRouterOption
+	option.TokenAuthority = &permissionDeniedAuthority{}
+	testRouter := router.NewRouter(option)
 
 	go func() {
 		testRouter.Serve(listener)
 	}()
 
-	testListener, err := router.NewRouterListener(listener.Addr().String(), "test-channel")
-	if err != nil {
-		t.Error(err)
+	_, err = router.NewListenerWithoutAuth(listener.Addr().String(), "test-channel")
+	if err == nil {
+		t.Error("expect an error here")
 		return
 	}
+
+	testClient := router.NewClientWithoutAuth(listener.Addr().String())
+
+	if err := dialAndSend(testClient, "test-channel", []byte{}); err == nil {
+		t.Error("expect an error here")
+		return
+	}
+	listener.Close()
+}
+
+func testSuite(t *testing.T, listener *router.RouterListener, client *router.RouterClient, router *router.Router) {
+	pending := sync.WaitGroup{}
 
 	testMessage := []byte("hello world")
 
 	pending.Add(1)
 	go func() {
-		if err := acceptAndEqual(testListener, string(testMessage)); err != nil {
+		if err := acceptAndEqual(listener, string(testMessage)); err != nil {
 			t.Error(err)
 		}
 		pending.Done()
 	}()
 
-	testClient := router.NewClient(listener.Addr().String(), "sender-channel")
-
-	if err := dialAndSend(testClient, "test-channel", testMessage); err != nil {
+	if err := dialAndSend(client, listener.Addr().String(), testMessage); err != nil {
 		t.Fatalf(err.Error())
 	}
 	pending.Wait()
-
-	testListener.Close()
 	listener.Close()
+}
+
+func TestE2E(t *testing.T) {
+	listener, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+	defer listener.Close()
+	testRouter := router.NewDefaultRouter()
+	go func() {
+		testRouter.Serve(listener)
+	}()
+	testListener, err := router.NewListenerWithoutAuth(listener.Addr().String(), "test")
+	if err != nil {
+		t.Fatalf("cannot create listener: %v", err)
+	}
+	testClient := router.NewClientWithoutAuth(listener.Addr().String())
+	testSuite(t, testListener, testClient, testRouter)
+}
+
+func TestE2EWithTLS(t *testing.T) {
+	ca, priv, pub, err := common.GenerateCertSuite()
+	if err != nil {
+		t.Fatalf("cannot generate test certificates")
+	}
+	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM(ca)
+	cert, err := tls.X509KeyPair(pub, priv)
+	if err != nil {
+		t.Fatalf("invalid certificate received")
+	}
+
+	option := router.DefaultRouterOption
+	option.TLSConfig = &tls.Config{
+		RootCAs:      pool,
+		ClientCAs:    pool,
+		Certificates: []tls.Certificate{cert},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+	}
+	option.TokenAuthority = &myTokenAuthrority{}
+	testRouter := router.NewRouter(option)
+	listener, err := tls.Listen("tcp", ":0", option.TLSConfig)
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+	defer listener.Close()
+	go func() {
+		testRouter.Serve(listener)
+	}()
+	tlsConfig := tls.Config{
+		RootCAs:      pool,
+		Certificates: []tls.Certificate{cert},
+		ServerName:   common.ServerName,
+	}
+
+	testListener, err := router.NewListener(listener.Addr().String(), "my-token", "test", &tlsConfig)
+	if err != nil {
+		t.Fatalf("cannot create listener: %v", err)
+	}
+	testClient := router.NewClient(listener.Addr().String(), "my-token", &tlsConfig)
+	testSuite(t, testListener, testClient, testRouter)
 }
 
 func BenchmarkSmallConnection(b *testing.B) {
@@ -90,18 +185,18 @@ func BenchmarkSmallConnection(b *testing.B) {
 	defer listener.Close()
 
 	pending := sync.WaitGroup{}
-	testRouter := router.NewRouter()
+	testRouter := router.NewDefaultRouter()
 
 	go func() {
 		testRouter.Serve(listener)
 	}()
 
-	testListener, err := router.NewRouterListener(listener.Addr().String(), "test-channel")
+	testListener, err := router.NewListenerWithoutAuth(listener.Addr().String(), "test-channel")
 	if err != nil {
 		b.Fatalf(err.Error())
 	}
 
-	testMessage := make([]byte, 16)
+	testMessage := make([]byte, 32)
 
 	b.ResetTimer()
 
@@ -112,7 +207,7 @@ func BenchmarkSmallConnection(b *testing.B) {
 		pending.Done()
 	}()
 
-	testClient := router.NewClient(listener.Addr().String(), "sender-channel")
+	testClient := router.NewClientWithoutAuth(listener.Addr().String())
 
 	pending.Add(1)
 	for i := 0; i < b.N; i++ {

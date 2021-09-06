@@ -5,6 +5,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/xpy123993/router/router/proto"
 )
 
 // routerConnection is a net.Conn wrapper.
@@ -92,7 +94,7 @@ func newConn(conn net.Conn) *routerConnection {
 
 // probe returns whether the connection is healthy.
 func (conn *routerConnection) probe() bool {
-	return conn.writeFrame(&RouterFrame{Type: Nop}) == nil
+	return conn.writeFrame(&nopFrame) == nil
 }
 
 // SpawnConnectionChecker pings the connection periodically, returns and close the channel if any error encountered.
@@ -117,12 +119,14 @@ func (conn *routerConnection) SpawnConnectionChecker(duration time.Duration) {
 
 // SpawnBackfillInvoker will detach a goroutine to backfill connections from routerlistener.
 // Exit when the ReceiverConnection is closed.
-func (conn *receiverConnection) SpawnBackfillInvoker() {
+func (conn *receiverConnection) SpawnBackfillInvoker(maxSize int) {
 	go func(receiverChannel chan *routerConnection) {
 		for !conn.isClosed() {
-			if len(receiverChannel) < InflightPoolMaxSize {
+			if len(receiverChannel) < maxSize {
 				if err := conn.writeFrame(&RouterFrame{
-					Type: Bridge,
+					Type:    proto.Bridge,
+					Token:   "",
+					Channel: "",
 				}); err != nil {
 					continue
 				}
