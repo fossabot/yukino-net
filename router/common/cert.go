@@ -12,7 +12,7 @@ import (
 )
 
 // ServerName is the server name of the certificate created by this tool.
-const ServerName = "Yukino-Message"
+const ServerName = "test"
 
 func createCertificateSpec(isCA bool) *x509.Certificate {
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
@@ -40,10 +40,10 @@ func createCertificateSpec(isCA bool) *x509.Certificate {
 		certificate.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth}
 		certificate.KeyUsage = x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign
 		certificate.BasicConstraintsValid = true
-		certificate.DNSNames = []string{"Yukino-Authority"}
+		certificate.DNSNames = []string{"test-authority"}
 	} else {
 		certificate.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth}
-		certificate.DNSNames = []string{"Yukino-Message"}
+		certificate.DNSNames = []string{ServerName}
 		certificate.SubjectKeyId = []byte{1, 2, 3, 4, 6}
 		certificate.KeyUsage = x509.KeyUsageDigitalSignature
 	}
