@@ -93,3 +93,40 @@ func TestE2E(t *testing.T) {
 	listener.Close()
 	pending.Wait()
 }
+
+func BenchmarkSmallConnection(b *testing.B) {
+	listener, err := net.Listen("tcp", ":0")
+	if err != nil {
+		b.Fatalf(err.Error())
+	}
+	defer listener.Close()
+
+	pending := sync.WaitGroup{}
+	testRouter := router.NewRouter()
+
+	go func() {
+		testRouter.Serve(listener)
+	}()
+
+	testListener, err := router.NewRouterListener(listener.Addr().String(), "test-channel")
+	if err != nil {
+		b.Fatalf(err.Error())
+	}
+
+	testMessage := make([]byte, 4096)
+
+	go func() {
+		for i := 0; i < b.N; i++ {
+			acceptAndEqual(testListener, string(testMessage))
+			pending.Done()
+		}
+	}()
+
+	testClient := router.NewClient(listener.Addr().String(), "sender-channel")
+
+	for i := 0; i < b.N; i++ {
+		pending.Add(1)
+		dialAndSend(testClient, "test-channel", testMessage)
+	}
+	pending.Wait()
+}
