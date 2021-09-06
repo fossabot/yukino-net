@@ -13,7 +13,7 @@ import (
 func acceptAndEqual(listener net.Listener, message string) error {
 	conn, err := listener.Accept()
 	if err != nil {
-		return err
+		return fmt.Errorf("while accepting: %v", err)
 	}
 	defer conn.Close()
 
@@ -40,6 +40,7 @@ func dialAndSend(client *router.RouterClient, channel string, message []byte) er
 }
 
 func TestE2E(t *testing.T) {
+	t.Parallel()
 	listener, err := net.Listen("tcp", ":0")
 	if err != nil {
 		t.Error(err)
@@ -49,10 +50,8 @@ func TestE2E(t *testing.T) {
 	pending := sync.WaitGroup{}
 	testRouter := router.NewRouter()
 
-	pending.Add(1)
 	go func() {
 		testRouter.Serve(listener)
-		pending.Done()
 	}()
 
 	testListener, err := router.NewRouterListener(listener.Addr().String(), "test-channel")
@@ -65,36 +64,25 @@ func TestE2E(t *testing.T) {
 
 	pending.Add(1)
 	go func() {
-		defer pending.Done()
 		if err := acceptAndEqual(testListener, string(testMessage)); err != nil {
 			t.Error(err)
 		}
-		if err := acceptAndEqual(testListener, string(testMessage)); err != nil {
-			t.Error(err)
-		}
+		pending.Done()
 	}()
 
 	testClient := router.NewClient(listener.Addr().String(), "sender-channel")
 
 	if err := dialAndSend(testClient, "test-channel", testMessage); err != nil {
-		t.Error(err)
+		t.Fatalf(err.Error())
 	}
-
-	if err := dialAndSend(testClient, "test-channel", testMessage); err != nil {
-		t.Error(err)
-	}
+	pending.Wait()
 
 	testListener.Close()
-
-	if err := dialAndSend(testClient, "test-channel", testMessage); err == nil {
-		t.Error("expect an error here")
-	}
-
 	listener.Close()
-	pending.Wait()
 }
 
 func BenchmarkSmallConnection(b *testing.B) {
+	b.SetParallelism(4)
 	listener, err := net.Listen("tcp", ":0")
 	if err != nil {
 		b.Fatalf(err.Error())
@@ -113,19 +101,21 @@ func BenchmarkSmallConnection(b *testing.B) {
 		b.Fatalf(err.Error())
 	}
 
-	testMessage := make([]byte, 4096)
+	testMessage := make([]byte, 16)
+
+	b.ResetTimer()
 
 	go func() {
 		for i := 0; i < b.N; i++ {
 			acceptAndEqual(testListener, string(testMessage))
-			pending.Done()
 		}
+		pending.Done()
 	}()
 
 	testClient := router.NewClient(listener.Addr().String(), "sender-channel")
 
+	pending.Add(1)
 	for i := 0; i < b.N; i++ {
-		pending.Add(1)
 		dialAndSend(testClient, "test-channel", testMessage)
 	}
 	pending.Wait()

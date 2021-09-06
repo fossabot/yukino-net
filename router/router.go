@@ -1,9 +1,7 @@
 package router
 
 import (
-	"bufio"
 	"context"
-	"encoding/gob"
 	"fmt"
 	"io"
 	"log"
@@ -19,112 +17,48 @@ const (
 	Nop    = byte(iota)
 	Close  = byte(iota)
 
+	// InflightPoolMaxSize specifies the maximum pre-allocate connections for each receiver.
+	InflightPoolMaxSize       = 16
 	DialConnectionTimeout     = 2 * time.Second
-	ListenConnectionKeepAlive = 10 * time.Second
+	ListenConnectionKeepAlive = 20 * time.Second
 )
 
 // RouterFrame is the packet using between Router.
 type RouterFrame struct {
-	Type         byte
-	Channel      string
-	ConnectionID uint64
-}
-
-// RouterConnection is a net.Conn wrapper.
-type RouterConnection struct {
-	mu         sync.Mutex
-	Connection net.Conn
-	Encoder    *gob.Encoder
-
-	isClosed bool
-	// Closed is a signal indicates this connection is ready to be GCed.
-	Closed chan struct{}
-}
-
-// Close marks a connection as closed state.
-func (conn *RouterConnection) Close() {
-	conn.mu.Lock()
-	defer conn.mu.Unlock()
-	if conn.isClosed {
-		return
-	}
-	conn.Connection.Close()
-	close(conn.Closed)
-	conn.isClosed = true
-}
-
-func (conn *RouterConnection) writeFrame(frame *RouterFrame) error {
-	conn.mu.Lock()
-	defer conn.mu.Unlock()
-	if err := conn.Encoder.Encode(*frame); err != nil {
-		return err
-	}
-	return nil
-}
-
-func NewConn(conn net.Conn) *RouterConnection {
-	return &RouterConnection{
-		mu:         sync.Mutex{},
-		Connection: conn,
-		Encoder:    gob.NewEncoder(conn),
-		isClosed:   false,
-		Closed:     make(chan struct{}),
-	}
-}
-
-// probe returns whether the connection is healthy.
-func (conn *RouterConnection) probe() bool {
-	return conn.writeFrame(&RouterFrame{Type: Nop, Channel: "", ConnectionID: 0}) == nil
+	Type    byte
+	Channel string
 }
 
 // Router proxies requests.
 type Router struct {
-	mu               sync.RWMutex
-	inflightTable    map[uint64]*RouterConnection // temporary stores inflight dial request
-	receiverTable    map[string]*RouterConnection // control channel to the receiver.
-	nextConnectionID uint64
+	mu            sync.RWMutex
+	receiverTable map[string]*receiverConnection // control channel to the receiver.
 }
 
 // NewRouter creates a Router structure.
 func NewRouter() *Router {
 	return &Router{
-		mu:               sync.RWMutex{},
-		inflightTable:    make(map[uint64]*RouterConnection),
-		receiverTable:    make(map[string]*RouterConnection),
-		nextConnectionID: 0,
+		mu:            sync.RWMutex{},
+		receiverTable: make(map[string]*receiverConnection),
 	}
-}
-
-// SpawnConnectionChecker pings the connection periodically, returns and close the channel if any error encountered.
-func (conn *RouterConnection) SpawnConnectionChecker(duration time.Duration) {
-	go func() {
-		ticker := time.NewTicker(duration)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				if !conn.probe() {
-					conn.Close()
-					return
-				}
-			case <-conn.Closed:
-				conn.Close()
-				return
-			}
-		}
-	}()
 }
 
 // handleListen handles a listen type of connection.
 // It is caller's responsibility to close the connection.
 func (router *Router) handleListen(channel string, conn net.Conn) error {
-	controlConnection := NewConn(conn)
+	controlConnection := receiverConnection{
+		routerConnection:   *newConn(conn),
+		inflightConnection: make(chan *routerConnection, InflightPoolMaxSize),
+		backfillSig:        sync.Mutex{},
+	}
+	controlConnection.cond = sync.NewCond(&controlConnection.backfillSig)
+
 	router.mu.Lock()
 	if _, exists := router.receiverTable[channel]; exists {
 		router.mu.Unlock()
 		return fmt.Errorf("channel %s is already registered", channel)
 	}
-	router.receiverTable[channel] = controlConnection
+	router.receiverTable[channel] = &controlConnection
 	router.mu.Unlock()
 
 	defer func() {
@@ -133,18 +67,19 @@ func (router *Router) handleListen(channel string, conn net.Conn) error {
 		router.mu.Unlock()
 	}()
 
+	controlConnection.SpawnConnectionChecker(ListenConnectionKeepAlive)
+	controlConnection.SpawnBackfillInvoker()
+
 	if !controlConnection.probe() {
 		return nil
 	}
 
-	controlConnection.SpawnConnectionChecker(ListenConnectionKeepAlive)
-
 	frame := RouterFrame{}
-	if err := gob.NewDecoder(controlConnection.Connection).Decode(&frame); err != nil {
+	if err := readFrame(&frame, controlConnection.Connection); err != nil {
 		return err
 	}
 	if frame.Type == Close {
-		controlConnection.Close()
+		controlConnection.close()
 		return nil
 	}
 
@@ -154,87 +89,98 @@ func (router *Router) handleListen(channel string, conn net.Conn) error {
 
 // handleDial handles a dial request.
 func (router *Router) handleDial(frame *RouterFrame, conn net.Conn) error {
-	dialConnection := NewConn(conn)
+	dialConnection := newConn(conn)
+	defer dialConnection.close()
 	if dialConn, ok := conn.(*net.TCPConn); ok {
 		dialConn.SetKeepAlive(true)
-		dialConn.SetKeepAlivePeriod(ListenConnectionKeepAlive)
+		dialConn.SetKeepAlivePeriod(DialConnectionTimeout)
 	}
 	conn.SetDeadline(time.Now().Add(DialConnectionTimeout))
 	router.mu.Lock()
 
-	controlConnection, exist := router.receiverTable[frame.Channel]
+	receiverChan, exist := router.receiverTable[frame.Channel]
 	if !exist {
 		router.mu.Unlock()
 		return fmt.Errorf("channel %s is not registered", frame.Channel)
 	}
-	connectionID := router.nextConnectionID
-	router.nextConnectionID++
-	router.inflightTable[connectionID] = dialConnection
+
 	router.mu.Unlock()
 
-	defer func() {
-		router.mu.Lock()
-		delete(router.inflightTable, connectionID)
-		router.mu.Unlock()
-	}()
+	receiverChan.signalBackfill()
+	var peerConn *routerConnection
+	var ok bool
 
-	if err := controlConnection.writeFrame(&RouterFrame{
-		Type:         Bridge,
-		Channel:      "",
-		ConnectionID: connectionID,
-	}); err != nil {
+	select {
+	case peerConn, ok = <-receiverChan.inflightConnection:
+		if !ok {
+			return nil
+		}
+	case <-dialConnection.Closed:
+		return nil
+	case <-receiverChan.Closed:
+		return nil
+	}
+	defer peerConn.close()
+
+	conn.SetDeadline(time.Time{})
+	receiverChan.signalBackfill()
+
+	if err := writeFrame(&RouterFrame{
+		Type: Bridge,
+	}, conn); err != nil {
 		return err
 	}
+	peerConn.writeFrame(&RouterFrame{
+		Type: Bridge,
+	})
 
-	<-dialConnection.Closed
-	return nil
-}
-
-func (router *Router) handleBridge(frame *RouterFrame, conn net.Conn) error {
 	ctx, cancelFn := context.WithCancel(context.Background())
 	defer cancelFn()
 
-	router.mu.Lock()
-	peerConn, exist := router.inflightTable[frame.ConnectionID]
-	delete(router.inflightTable, frame.ConnectionID)
-	router.mu.Unlock()
-	peerConn.Connection.SetDeadline(time.Time{})
-
-	if !exist {
-		return fmt.Errorf("handshake failed, might be failed due to timeout")
-	}
-
-	if err := peerConn.writeFrame(&RouterFrame{
-		Type:         Bridge,
-		Channel:      "",
-		ConnectionID: 0,
-	}); err != nil {
-		return err
-	}
-
 	go func() {
-		io.Copy(peerConn.Connection, bufio.NewReader(conn))
+		io.Copy(peerConn.Connection, conn)
 		cancelFn()
 	}()
 
 	go func() {
-		io.Copy(conn, bufio.NewReader(peerConn.Connection))
+		io.Copy(conn, peerConn.Connection)
 		cancelFn()
 	}()
 
 	<-ctx.Done()
+	return nil
+}
 
-	peerConn.Close()
+func (router *Router) handleBridge(frame *RouterFrame, conn net.Conn) error {
+	connection := newConn(conn)
+	defer connection.close()
+	router.mu.Lock()
+	receiverChannel, exist := router.receiverTable[frame.Channel]
+	router.mu.Unlock()
+	if !exist {
+		return fmt.Errorf("handshake failed, might be failed due to timeout")
+	}
+
+	select {
+	case <-time.After(DialConnectionTimeout):
+		connection.close()
+		return nil
+	case <-receiverChannel.Closed:
+		return nil
+	case receiverChannel.inflightConnection <- connection:
+	}
+
+	receiverChannel.signalBackfill()
+	<-connection.Closed
 	return nil
 }
 
 // handleConnection takes the responsibility to close the connection once done.
 func (router *Router) handleConnection(conn net.Conn) error {
 	defer conn.Close()
-	decoder := gob.NewDecoder(conn)
 	frame := RouterFrame{}
 
-	if err := decoder.Decode(&frame); err != nil {
+	if err := readFrame(&frame, conn); err != nil {
 		return fmt.Errorf("closing connection from %v due to error: %v", conn.RemoteAddr(), err)
 	}
 
@@ -254,9 +200,12 @@ func (router *Router) Serve(listener net.Listener) error {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			log.Printf("router serve returns err: %v", err)
 			return err
 		}
-		go router.handleConnection(conn)
+		go func() {
+			if err := router.handleConnection(conn); err != nil {
+				log.Print(err.Error())
+			}
+		}()
 	}
 }

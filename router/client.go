@@ -2,7 +2,6 @@ package router
 
 import (
 	"crypto/tls"
-	"encoding/gob"
 	"fmt"
 	"io"
 	"log"
@@ -26,14 +25,14 @@ func NewClient(RouterAddress string, Channel string) *RouterClient {
 // DialWithConn initiates dial protocol from existing connection.
 // The connection can be from a tls.
 func (client *RouterClient) DialWithConn(TargetChannel string, Conn net.Conn) error {
-	if err := gob.NewEncoder(Conn).Encode(RouterFrame{
+	if err := writeFrame(&RouterFrame{
 		Type:    Dial,
 		Channel: TargetChannel,
-	}); err != nil {
+	}, Conn); err != nil {
 		return err
 	}
 	frame := RouterFrame{}
-	if err := gob.NewDecoder(Conn).Decode(&frame); err != nil {
+	if err := readFrame(&frame, Conn); err != nil {
 		return err
 	}
 	return nil
@@ -57,8 +56,6 @@ type RouterListener struct {
 	channel        string
 	controlConn    net.Conn
 	connInitialier func(string, string) (net.Conn, error)
-
-	decoder *gob.Decoder
 }
 
 // RouterAddress represents an address in Router network.
@@ -88,20 +85,18 @@ func NewRouterListenerWithConn(
 	if err != nil {
 		return nil, err
 	}
-	if err := gob.NewEncoder(conn).Encode(RouterFrame{
+	if err := writeFrame(&RouterFrame{
 		Type:    Listen,
 		Channel: Channel,
-	}); err != nil {
+	}, conn); err != nil {
 		return nil, err
 	}
 	frame := RouterFrame{}
-	decoder := gob.NewDecoder(conn)
-	if err := decoder.Decode(&frame); err != nil {
+	if err := readFrame(&frame, conn); err != nil {
 		return nil, err
 	}
 	return &RouterListener{
 		routerAddress:  RouterAddress,
-		decoder:        decoder,
 		channel:        Channel,
 		controlConn:    conn,
 		connInitialier: ConnInitialier,
@@ -115,7 +110,7 @@ func NewRouterListener(RouterAddress string, Channel string) (*RouterListener, e
 
 // Close closes the listener.
 func (listener *RouterListener) Close() error {
-	gob.NewEncoder(listener.controlConn).Encode(RouterFrame{Type: Close})
+	writeFrame(&RouterFrame{Type: Close}, listener.controlConn)
 	return listener.controlConn.Close()
 }
 
@@ -130,17 +125,15 @@ func (listener *RouterListener) Addr() net.Addr {
 func (listener *RouterListener) Accept() (net.Conn, error) {
 	frame := RouterFrame{}
 	for {
-		if err := listener.decoder.Decode(&frame); err != nil {
+		if err := readFrame(&frame, listener.controlConn); err != nil {
 			if err == io.EOF {
-				return nil, nil
+				return nil, err
 			}
-			log.Print(err.Error())
 			continue
 		}
 		if frame.Type != Nop {
 			break
 		}
-		frame = RouterFrame{}
 	}
 	if frame.Type != Bridge {
 		return nil, fmt.Errorf("server returns invalid request type: %d, expect bridge: %v", frame.Type, frame)
@@ -149,11 +142,14 @@ func (listener *RouterListener) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot fork connection request: %v", err)
 	}
-	if err := gob.NewEncoder(conn).Encode(RouterFrame{
-		Type:         Bridge,
-		ConnectionID: frame.ConnectionID,
-	}); err != nil {
+	if err := writeFrame(&RouterFrame{
+		Type:    Bridge,
+		Channel: listener.channel,
+	}, conn); err != nil {
 		return nil, fmt.Errorf("failed to handshake: %v", err)
+	}
+	if err := readFrame(&frame, conn); err != nil {
+		return listener.Accept()
 	}
 	return conn, nil
 }
