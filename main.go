@@ -22,6 +22,8 @@ var (
 	proxyClientAddress = flag.String("proxy-listen", ":10111", "The address to be forwarded.")
 )
 
+const proxyChannel = "proxy"
+
 func loadCertificateFromFlags() (*x509.CertPool, *tls.Certificate, error) {
 	certificate, err := tls.X509KeyPair(crt, key)
 	if err != nil {
@@ -32,47 +34,23 @@ func loadCertificateFromFlags() (*x509.CertPool, *tls.Certificate, error) {
 	return pool, &certificate, nil
 }
 
-func createListener() (net.Listener, error) {
-	pool, certificate, err := loadCertificateFromFlags()
-	if err != nil {
-		return nil, err
-	}
-	return tls.Listen("tcp", *servingAddress, &tls.Config{
-		RootCAs:      pool,
-		ClientCAs:    pool,
-		ClientAuth:   tls.RequireAndVerifyClientCert,
-		Certificates: []tls.Certificate{*certificate},
-	})
-}
-
-func createTCPConnection(network, address string) (net.Conn, error) {
-	pool, certificate, err := loadCertificateFromFlags()
-	if err != nil {
-		return nil, err
-	}
-	return tls.Dial(network, address, &tls.Config{
-		RootCAs:      pool,
-		ServerName:   ServerName,
-		Certificates: []tls.Certificate{*certificate},
-	})
-}
-
 func routerMode() {
-	listener, err := createListener()
+	caPool, certificate, err := loadCertificateFromFlags()
 	if err != nil {
-		log.Fatalf("error while start listening: %v", err)
+		log.Fatalf("error while loading certificate: %v", err)
 	}
-	hostRouter := router.NewRouter()
-	log.Printf("listening on %s", listener.Addr().String())
-	hostRouter.Serve(listener)
+	router.ListenAndServeRouting(*servingAddress, caPool, certificate)
 }
 
 func proxyMode() {
-	listener, err := router.NewRouterListenerWithConn(*servingAddress, "proxy", createTCPConnection)
+	caPool, certificate, err := loadCertificateFromFlags()
+	if err != nil {
+		log.Fatalf("error while loading certificate: %v", err)
+	}
+	listener, err := router.ListenChannel(*servingAddress, proxyChannel, ServerName, caPool, certificate)
 	if err != nil {
 		log.Fatalf("error while listening on proxy channel: %v", err)
 	}
-
 	conf := socks5.Config{}
 	server, err := socks5.New(&conf)
 	if err != nil {
@@ -83,11 +61,14 @@ func proxyMode() {
 }
 
 func proxyClientMode() {
+	caPool, certificate, err := loadCertificateFromFlags()
+	if err != nil {
+		log.Fatalf("error while loading certificate: %v", err)
+	}
 	listener, err := net.Listen("tcp", *proxyClientAddress)
 	if err != nil {
 		log.Fatalf("error while listening on proxy channel: %v", err)
 	}
-	targetClient := router.NewClient(*servingAddress, "client")
 	for {
 		client, err := listener.Accept()
 		if err != nil {
@@ -96,12 +77,7 @@ func proxyClientMode() {
 		}
 		go func(client net.Conn) {
 			defer client.Close()
-			conn, err := createTCPConnection("tcp", *servingAddress)
-			if err != nil {
-				log.Printf("cannot process connection: %v", err)
-				return
-			}
-			err = targetClient.DialWithConn("proxy", conn)
+			conn, err := router.DialChannel(*servingAddress, proxyChannel, ServerName, caPool, certificate)
 			if err != nil {
 				log.Println(err.Error())
 				return
