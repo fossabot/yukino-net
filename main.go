@@ -48,7 +48,6 @@ func routerMode() {
 	}
 	serviceRouter := router.NewRouter(router.RouterOption{
 		TokenAuthority:            &tokenAuthority{},
-		InflightPoolMaxSize:       16,
 		DialConnectionTimeout:     3 * time.Second,
 		ListenConnectionKeepAlive: 30 * time.Second,
 		TLSConfig: &tls.Config{

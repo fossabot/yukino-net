@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"sync"
 
 	"github.com/xpy123993/router/router/proto"
 )
@@ -70,6 +71,9 @@ type RouterListener struct {
 	token         string
 	controlConn   net.Conn
 	tlsConfig     *tls.Config
+
+	mu       sync.Mutex
+	isClosed bool
 }
 
 // RouterAddress represents an address in Router network.
@@ -96,6 +100,9 @@ func NewRouterListenerWithConn(
 		channel:       Channel,
 		token:         Token,
 		tlsConfig:     TLSConfig,
+
+		mu:       sync.Mutex{},
+		isClosed: false,
 	}
 	var err error
 	routerListener.controlConn, err = routerListener.createConnection("tcp", RouterAddress)
@@ -139,6 +146,12 @@ func NewListener(RouterAddress, Token, Channel string, TLSConfig *tls.Config) (*
 
 // Close closes the listener.
 func (listener *RouterListener) Close() error {
+	listener.mu.Lock()
+	defer listener.mu.Unlock()
+	if listener.isClosed {
+		return nil
+	}
+	listener.isClosed = true
 	writeFrame(&RouterFrame{Type: proto.Close}, listener.controlConn)
 	return listener.controlConn.Close()
 }
@@ -150,15 +163,21 @@ func (listener *RouterListener) Addr() net.Addr {
 	}
 }
 
+// IsClosed returns whether the listener is closed.
+func (listener *RouterListener) IsClosed() bool {
+	listener.mu.Lock()
+	defer listener.mu.Unlock()
+	return listener.isClosed
+}
+
 // Accept returns a bridged connection from a dial request.
 func (listener *RouterListener) Accept() (net.Conn, error) {
 	frame := RouterFrame{}
-	for {
+	for listener != nil {
 		if err := readFrame(&frame, listener.controlConn); err != nil {
-			if err == io.EOF {
+			if err == io.EOF || listener.IsClosed() {
 				return nil, err
 			}
-			continue
 		}
 		if frame.Type != proto.Nop {
 			break
@@ -172,14 +191,12 @@ func (listener *RouterListener) Accept() (net.Conn, error) {
 		return nil, fmt.Errorf("cannot fork connection request: %v", err)
 	}
 	if err := writeFrame(&RouterFrame{
-		Type:    proto.Bridge,
-		Token:   listener.token,
-		Channel: listener.channel,
+		Type:         proto.Bridge,
+		Token:        listener.token,
+		Channel:      listener.channel,
+		ConnectionID: frame.ConnectionID,
 	}, conn); err != nil {
 		return nil, fmt.Errorf("failed to handshake: %v", err)
-	}
-	if err := readFrame(&frame, conn); err != nil {
-		return listener.Accept()
 	}
 	return conn, nil
 }

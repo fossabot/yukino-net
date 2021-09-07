@@ -5,8 +5,6 @@ import (
 	"net"
 	"sync"
 	"time"
-
-	"github.com/xpy123993/router/router/proto"
 )
 
 // routerConnection is a net.Conn wrapper.
@@ -17,22 +15,6 @@ type routerConnection struct {
 	isclosed bool
 	// Closed is a signal indicates this connection is ready to be GCed.
 	Closed chan struct{}
-}
-
-// receiverConnection is a structure to store the regitered channel.
-type receiverConnection struct {
-	routerConnection
-	inflightConnection chan *routerConnection
-
-	backfillSig sync.Mutex
-	cond        *sync.Cond
-}
-
-// isClosed returns if the connection is closed.
-func (conn *routerConnection) isClosed() bool {
-	conn.mu.Lock()
-	defer conn.mu.Unlock()
-	return conn.isclosed
 }
 
 // close marks a connection as closed state.
@@ -57,30 +39,6 @@ func (conn *routerConnection) writeFrame(frame *RouterFrame) error {
 		return err
 	}
 	return nil
-}
-
-// waitBackFillSignal blocks until `signalBackfill` is called.
-func (conn *receiverConnection) waitBackFillSignal() {
-	conn.backfillSig.Lock()
-	conn.cond.Wait()
-	conn.backfillSig.Unlock()
-}
-
-// signalBackfill will wake up all thread blocked by `waitBackFillSignal`.
-func (conn *receiverConnection) signalBackfill() {
-	conn.backfillSig.Lock()
-	conn.cond.Broadcast()
-	conn.backfillSig.Unlock()
-}
-
-func (conn *receiverConnection) close() {
-	conn.backfillSig.Lock()
-	if !conn.routerConnection.isClosed() {
-		conn.routerConnection.close()
-		close(conn.inflightConnection)
-	}
-	conn.cond.Broadcast()
-	conn.backfillSig.Unlock()
 }
 
 func newConn(conn net.Conn) *routerConnection {
@@ -115,23 +73,4 @@ func (conn *routerConnection) SpawnConnectionChecker(duration time.Duration) {
 			}
 		}
 	}()
-}
-
-// SpawnBackfillInvoker will detach a goroutine to backfill connections from routerlistener.
-// Exit when the ReceiverConnection is closed.
-func (conn *receiverConnection) SpawnBackfillInvoker(maxSize int) {
-	go func(receiverChannel chan *routerConnection) {
-		for !conn.isClosed() {
-			if len(receiverChannel) < maxSize {
-				if err := conn.writeFrame(&RouterFrame{
-					Type:    proto.Bridge,
-					Token:   "",
-					Channel: "",
-				}); err != nil {
-					continue
-				}
-			}
-			conn.waitBackFillSignal()
-		}
-	}(conn.inflightConnection)
 }

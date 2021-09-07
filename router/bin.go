@@ -12,9 +12,10 @@ const MaxChannelNameLength = 256
 
 // RouterFrame is the packet using between Router.
 type RouterFrame struct {
-	Type    byte
-	Token   string
-	Channel string
+	Type         byte
+	ConnectionID uint64
+	Token        string
+	Channel      string
 }
 
 var nopFrame = RouterFrame{Type: proto.Nop}
@@ -52,6 +53,9 @@ func writeFrame(frame *RouterFrame, writer io.Writer) error {
 	if _, err := writer.Write([]byte{frame.Type}); err != nil {
 		return err
 	}
+	if err := binary.Write(writer, binary.BigEndian, frame.ConnectionID); err != nil {
+		return err
+	}
 	if err := writeString(&frame.Token, writer); err != nil {
 		return err
 	}
@@ -66,6 +70,9 @@ func readFrame(frame *RouterFrame, reader io.Reader) error {
 		return fmt.Errorf("cannot read control byte")
 	}
 	frame.Type = buf[0]
+	if err := binary.Read(reader, binary.BigEndian, &frame.ConnectionID); err != nil {
+		return err
+	}
 	var err error
 	frame.Token, err = readString(reader)
 	if err != nil {

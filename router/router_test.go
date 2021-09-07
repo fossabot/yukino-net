@@ -93,24 +93,60 @@ func TestPermissionDenied(t *testing.T) {
 	listener.Close()
 }
 
-func testSuite(t *testing.T, listener *router.RouterListener, client *router.RouterClient, router *router.Router) {
+func testSuite(t *testing.T, channel string, listener *router.RouterListener, client *router.RouterClient, router *router.Router) {
 	pending := sync.WaitGroup{}
 
 	testMessage := []byte("hello world")
 
 	pending.Add(1)
 	go func() {
+		defer pending.Done()
 		if err := acceptAndEqual(listener, string(testMessage)); err != nil {
-			t.Error(err)
+			t.Error()
+			return
 		}
-		pending.Done()
 	}()
 
-	if err := dialAndSend(client, listener.Addr().String(), testMessage); err != nil {
-		t.Fatalf(err.Error())
+	if err := dialAndSend(client, channel, testMessage); err != nil {
+		t.Fatal()
 	}
 	pending.Wait()
 	listener.Close()
+}
+
+func tlstestSuite(t *testing.T, serverca *x509.CertPool, clientca *x509.CertPool, servercert *tls.Certificate, clientcert *tls.Certificate, success bool) {
+	option := router.DefaultRouterOption
+	option.TLSConfig = &tls.Config{
+		RootCAs:      serverca,
+		ClientCAs:    serverca,
+		Certificates: []tls.Certificate{*servercert},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+	}
+	option.TokenAuthority = &myTokenAuthrority{}
+	testRouter := router.NewRouter(option)
+	listener, err := tls.Listen("tcp", ":0", option.TLSConfig)
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+	defer listener.Close()
+	go func() {
+		testRouter.Serve(listener)
+	}()
+	tlsConfig := tls.Config{
+		RootCAs:      clientca,
+		Certificates: []tls.Certificate{*clientcert},
+		ServerName:   common.ServerName,
+	}
+
+	testListener, err := router.NewListener(listener.Addr().String(), "my-token", "test", &tlsConfig)
+	if success == (err != nil) {
+		t.Fatalf("unexpect result: %v", err)
+	}
+	testClient := router.NewClient(listener.Addr().String(), "my-token", &tlsConfig)
+	if success {
+		testSuite(t, "test", testListener, testClient, testRouter)
+	}
 }
 
 func TestE2E(t *testing.T) {
@@ -129,7 +165,7 @@ func TestE2E(t *testing.T) {
 		t.Fatalf("cannot create listener: %v", err)
 	}
 	testClient := router.NewClientWithoutAuth(listener.Addr().String())
-	testSuite(t, testListener, testClient, testRouter)
+	testSuite(t, "test", testListener, testClient, testRouter)
 }
 
 func TestE2EWithTLS(t *testing.T) {
@@ -143,37 +179,34 @@ func TestE2EWithTLS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("invalid certificate received")
 	}
+	tlstestSuite(t, pool, pool, &cert, &cert, true)
+}
 
-	option := router.DefaultRouterOption
-	option.TLSConfig = &tls.Config{
-		RootCAs:      pool,
-		ClientCAs:    pool,
-		Certificates: []tls.Certificate{cert},
-		ClientAuth:   tls.RequireAndVerifyClientCert,
-	}
-	option.TokenAuthority = &myTokenAuthrority{}
-	testRouter := router.NewRouter(option)
-	listener, err := tls.Listen("tcp", ":0", option.TLSConfig)
+func TestE2EWithTLSAuthFailed(t *testing.T) {
+	serverCA, serverPriv, serverPub, err := common.GenerateCertSuite()
 	if err != nil {
-		t.Error(err)
-		t.FailNow()
+		t.Fatalf("cannot generate test certificates")
 	}
-	defer listener.Close()
-	go func() {
-		testRouter.Serve(listener)
-	}()
-	tlsConfig := tls.Config{
-		RootCAs:      pool,
-		Certificates: []tls.Certificate{cert},
-		ServerName:   common.ServerName,
-	}
-
-	testListener, err := router.NewListener(listener.Addr().String(), "my-token", "test", &tlsConfig)
+	serverPool := x509.NewCertPool()
+	serverPool.AppendCertsFromPEM(serverCA)
+	serverCert, err := tls.X509KeyPair(serverPub, serverPriv)
 	if err != nil {
-		t.Fatalf("cannot create listener: %v", err)
+		t.Fatalf("invalid certificate received")
 	}
-	testClient := router.NewClient(listener.Addr().String(), "my-token", &tlsConfig)
-	testSuite(t, testListener, testClient, testRouter)
+	clientCA, clientPriv, clientPub, err := common.GenerateCertSuite()
+	if err != nil {
+		t.Fatalf("cannot generate test certificates")
+	}
+	clientPool := x509.NewCertPool()
+	clientPool.AppendCertsFromPEM(clientCA)
+	clientCert, err := tls.X509KeyPair(clientPub, clientPriv)
+	if err != nil {
+		t.Fatalf("invalid certificate received %v", clientCert)
+	}
+	tlstestSuite(t, serverPool, clientPool, &serverCert, &clientCert, false)
+	tlstestSuite(t, clientPool, clientPool, &serverCert, &clientCert, false)
+	tlstestSuite(t, serverPool, clientPool, &clientCert, &clientCert, false)
+	tlstestSuite(t, serverPool, serverPool, &serverCert, &clientCert, false)
 }
 
 func BenchmarkSmallConnection(b *testing.B) {

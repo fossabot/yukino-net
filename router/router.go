@@ -1,6 +1,7 @@
 package router
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -15,7 +16,7 @@ import (
 
 const (
 	// InflightPoolMaxSize specifies the maximum pre-allocate connections for each receiver.
-	DefaultInflightPoolMaxSize       = 16
+	DefaultInflightPoolMaxSize       = 0
 	DefaultDialConnectionTimeout     = 2 * time.Second
 	DefaultListenConnectionKeepAlive = 20 * time.Second
 )
@@ -34,8 +35,6 @@ func (*noPermissionCheckAuthority) CheckPermission(*RouterFrame) bool { return t
 type RouterOption struct {
 	// TokenAuthority is the authority used for checking permissions.
 	TokenAuthority Authority
-	// InflightPoolMaxSize specifies how many free connections can be pre-allocated to serve future requests.
-	InflightPoolMaxSize int
 	// DialConnectionTimeout specifies the timeout when a dialer connects to a listener.
 	DialConnectionTimeout time.Duration
 	// ListenConnectionKeepAlive specfies the health check interval.
@@ -46,23 +45,25 @@ type RouterOption struct {
 
 var DefaultRouterOption = RouterOption{
 	TokenAuthority:            &noPermissionCheckAuthority{},
-	InflightPoolMaxSize:       DefaultInflightPoolMaxSize,
 	DialConnectionTimeout:     DefaultDialConnectionTimeout,
 	ListenConnectionKeepAlive: DefaultListenConnectionKeepAlive,
 }
 
 // Router proxies requests.
 type Router struct {
-	option        RouterOption
-	mu            sync.RWMutex
-	receiverTable map[string]*receiverConnection // control channel to the receiver.
+	option           RouterOption
+	mu               sync.RWMutex
+	receiverTable    map[string]*routerConnection // control channel to the receiver.
+	inflightTable    map[uint64]*routerConnection
+	nextConnectionID uint64
 }
 
 // NewRouter creates a Router structure.
 func NewRouter(option RouterOption) *Router {
 	return &Router{
 		mu:            sync.RWMutex{},
-		receiverTable: make(map[string]*receiverConnection),
+		receiverTable: make(map[string]*routerConnection),
+		inflightTable: make(map[uint64]*routerConnection),
 		option:        option,
 	}
 }
@@ -71,27 +72,23 @@ func NewRouter(option RouterOption) *Router {
 func NewDefaultRouter() *Router {
 	return &Router{
 		mu:            sync.RWMutex{},
-		receiverTable: make(map[string]*receiverConnection),
+		receiverTable: make(map[string]*routerConnection),
 		option:        DefaultRouterOption,
+		inflightTable: map[uint64]*routerConnection{},
 	}
 }
 
 // handleListen handles a listen type of connection.
 // It is caller's responsibility to close the connection.
 func (router *Router) handleListen(channel string, conn net.Conn) error {
-	controlConnection := receiverConnection{
-		routerConnection:   *newConn(conn),
-		inflightConnection: make(chan *routerConnection, router.option.InflightPoolMaxSize),
-		backfillSig:        sync.Mutex{},
-	}
-	controlConnection.cond = sync.NewCond(&controlConnection.backfillSig)
+	controlConnection := newConn(conn)
 
 	router.mu.Lock()
 	if _, exists := router.receiverTable[channel]; exists {
 		router.mu.Unlock()
 		return fmt.Errorf("channel %s is already registered", channel)
 	}
-	router.receiverTable[channel] = &controlConnection
+	router.receiverTable[channel] = controlConnection
 	router.mu.Unlock()
 
 	defer func() {
@@ -101,7 +98,6 @@ func (router *Router) handleListen(channel string, conn net.Conn) error {
 	}()
 
 	controlConnection.SpawnConnectionChecker(router.option.ListenConnectionKeepAlive)
-	controlConnection.SpawnBackfillInvoker(router.option.InflightPoolMaxSize)
 
 	if !controlConnection.probe() {
 		return nil
@@ -123,7 +119,6 @@ func (router *Router) handleListen(channel string, conn net.Conn) error {
 // handleDial handles a dial request.
 func (router *Router) handleDial(frame *RouterFrame, conn net.Conn) error {
 	dialConnection := newConn(conn)
-	defer dialConnection.close()
 	if dialConn, ok := conn.(*net.TCPConn); ok {
 		dialConn.SetKeepAlive(true)
 		dialConn.SetKeepAlivePeriod(router.option.DialConnectionTimeout)
@@ -131,83 +126,70 @@ func (router *Router) handleDial(frame *RouterFrame, conn net.Conn) error {
 	conn.SetDeadline(time.Now().Add(router.option.DialConnectionTimeout))
 	router.mu.Lock()
 
-	receiverChan, exist := router.receiverTable[frame.Channel]
+	controlConnection, exist := router.receiverTable[frame.Channel]
 	if !exist {
 		router.mu.Unlock()
 		return fmt.Errorf("channel %s is not registered", frame.Channel)
 	}
-
+	connectionID := router.nextConnectionID
+	router.nextConnectionID++
+	router.inflightTable[connectionID] = dialConnection
 	router.mu.Unlock()
 
-	receiverChan.signalBackfill()
-	var peerConn *routerConnection
-	var ok bool
-
-	select {
-	case peerConn, ok = <-receiverChan.inflightConnection:
-		if !ok {
-			return nil
-		}
-	case <-dialConnection.Closed:
-		return nil
-	case <-receiverChan.Closed:
-		return nil
-	}
-	defer peerConn.close()
-
-	conn.SetDeadline(time.Time{})
-	receiverChan.signalBackfill()
-
-	if err := writeFrame(&RouterFrame{
-		Type:    proto.Bridge,
-		Token:   "",
-		Channel: "",
-	}, conn); err != nil {
+	defer func() {
+		router.mu.Lock()
+		delete(router.inflightTable, connectionID)
+		router.mu.Unlock()
+	}()
+	if err := controlConnection.writeFrame(&RouterFrame{
+		Type:         proto.Bridge,
+		Channel:      "",
+		ConnectionID: connectionID,
+	}); err != nil {
 		return err
 	}
-	peerConn.writeFrame(&RouterFrame{
-		Type:    proto.Bridge,
-		Token:   "",
-		Channel: "",
-	})
 
-	ctx, cancelFn := context.WithCancel(context.Background())
-	defer cancelFn()
-
-	go func() {
-		io.Copy(peerConn.Connection, conn)
-		cancelFn()
-	}()
-
-	go func() {
-		io.Copy(conn, peerConn.Connection)
-		cancelFn()
-	}()
-
-	<-ctx.Done()
+	<-dialConnection.Closed
 	return nil
+
 }
 
 func (router *Router) handleBridge(frame *RouterFrame, conn net.Conn) error {
+	ctx, cancelFn := context.WithCancel(context.Background())
+	defer cancelFn()
+
 	connection := newConn(conn)
 	defer connection.close()
+
 	router.mu.Lock()
-	receiverChannel, exist := router.receiverTable[frame.Channel]
+	peerConn, exist := router.inflightTable[frame.ConnectionID]
+	delete(router.inflightTable, frame.ConnectionID)
 	router.mu.Unlock()
 	if !exist {
 		return fmt.Errorf("handshake failed, might be failed due to timeout")
 	}
+	peerConn.Connection.SetDeadline(time.Time{})
 
-	select {
-	case <-time.After(router.option.DialConnectionTimeout):
-		connection.close()
-		return nil
-	case <-receiverChannel.Closed:
-		return nil
-	case receiverChannel.inflightConnection <- connection:
+	if err := peerConn.writeFrame(&RouterFrame{
+		Type: proto.Bridge,
+	}); err != nil {
+		return err
 	}
 
-	receiverChannel.signalBackfill()
+	go func() {
+		io.Copy(peerConn.Connection, bufio.NewReader(conn))
+		cancelFn()
+	}()
+
+	go func() {
+		io.Copy(conn, bufio.NewReader(peerConn.Connection))
+		cancelFn()
+	}()
+
+	<-ctx.Done()
+
+	peerConn.close()
+
 	<-connection.Closed
 	return nil
 }
