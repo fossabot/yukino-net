@@ -8,6 +8,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/xpy123993/router/router"
 	"github.com/xpy123993/router/router/common"
@@ -47,6 +48,9 @@ type permissionDeniedAuthority struct{}
 type myTokenAuthrority struct{}
 
 func (*permissionDeniedAuthority) CheckPermission(*router.RouterFrame) bool { return false }
+func (*permissionDeniedAuthority) GetExpirationTime([]byte) time.Time {
+	return time.Now().Add(24 * time.Hour)
+}
 func (*myTokenAuthrority) CheckPermission(frame *router.RouterFrame) bool {
 	switch frame.Type {
 	case proto.Close:
@@ -61,6 +65,9 @@ func (*myTokenAuthrority) CheckPermission(frame *router.RouterFrame) bool {
 		return string(frame.Token) == "my-token"
 	}
 	return false
+}
+func (*myTokenAuthrority) GetExpirationTime([]byte) time.Time {
+	return time.Now().Add(24 * time.Hour)
 }
 
 func TestPermissionDenied(t *testing.T) {

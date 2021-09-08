@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
@@ -25,11 +26,17 @@ const (
 type Authority interface {
 	// Returns if the permission check is passed for `frame`.
 	CheckPermission(frame *RouterFrame) bool
+
+	// Returns the expiration time of the key. Router will use this to set a connection deadline.
+	GetExpirationTime(key []byte) time.Time
 }
 
 type noPermissionCheckAuthority struct{}
 
 func (*noPermissionCheckAuthority) CheckPermission(*RouterFrame) bool { return true }
+func (*noPermissionCheckAuthority) GetExpirationTime([]byte) time.Time {
+	return time.Now().Add(24 * time.Hour)
+}
 
 // RouterOption specifies a set of options being used by the router.
 type RouterOption struct {
@@ -208,7 +215,8 @@ func (router *Router) handleConnection(conn net.Conn) error {
 		return fmt.Errorf("closing connection from %v due to error: %v", conn.RemoteAddr(), err)
 	}
 	if !router.option.TokenAuthority.CheckPermission(&frame) {
-		return fmt.Errorf("permission denied: frame: %v", frame)
+		return fmt.Errorf("permission denied: invalid token `%s`",
+			base64.RawStdEncoding.EncodeToString(frame.Token))
 	}
 
 	switch frame.Type {
