@@ -54,11 +54,11 @@ func (*myTokenAuthrority) CheckPermission(frame *router.RouterFrame) bool {
 	case proto.Nop:
 		return true
 	case proto.Bridge:
-		return frame.Token == "my-token"
+		return string(frame.Token) == "my-token"
 	case proto.Listen:
-		return frame.Token == "my-token"
+		return string(frame.Token) == "my-token"
 	case proto.Dial:
-		return frame.Token == "my-token"
+		return string(frame.Token) == "my-token"
 	}
 	return false
 }
@@ -139,11 +139,11 @@ func tlstestSuite(t *testing.T, serverca *x509.CertPool, clientca *x509.CertPool
 		ServerName:   common.ServerName,
 	}
 
-	testListener, err := router.NewListener(listener.Addr().String(), "my-token", "test", &tlsConfig)
+	testListener, err := router.NewListener(listener.Addr().String(), []byte("my-token"), "test", &tlsConfig)
 	if success == (err != nil) {
 		t.Fatalf("unexpect result: %v", err)
 	}
-	testClient := router.NewClient(listener.Addr().String(), "my-token", &tlsConfig)
+	testClient := router.NewClient(listener.Addr().String(), []byte("my-token"), &tlsConfig)
 	if success {
 		testSuite(t, "test", testListener, testClient, testRouter)
 	}

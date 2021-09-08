@@ -14,39 +14,39 @@ const MaxChannelNameLength = 256
 type RouterFrame struct {
 	Type         byte
 	ConnectionID uint64
-	Token        string
+	Token        []byte
 	Channel      string
 }
 
 var nopFrame = RouterFrame{Type: proto.Nop}
 
-func writeString(message *string, writer io.Writer) error {
-	if err := binary.Write(writer, binary.BigEndian, uint16(len(*message))); err != nil {
+func writeBytes(message []byte, writer io.Writer) error {
+	if err := binary.Write(writer, binary.BigEndian, uint16(len(message))); err != nil {
 		return err
 	}
-	if n, err := writer.Write([]byte(*message)); err != nil {
+	if n, err := writer.Write(message); err != nil {
 		return err
-	} else if n != len(*message) {
+	} else if n != len(message) {
 		return fmt.Errorf("string not fully write")
 	}
 	return nil
 }
 
-func readString(reader io.Reader) (string, error) {
+func readBytes(reader io.Reader) ([]byte, error) {
 	var strLen uint16
 	if err := binary.Read(reader, binary.BigEndian, &strLen); err != nil {
-		return "", err
+		return nil, err
 	}
 	if strLen > MaxChannelNameLength {
-		return "", fmt.Errorf("string length too large: %d > %d", strLen, MaxChannelNameLength)
+		return nil, fmt.Errorf("string length too large: %d > %d", strLen, MaxChannelNameLength)
 	}
 	buf := make([]byte, strLen)
 	if n, err := io.ReadFull(reader, buf); err != nil {
-		return "", err
+		return nil, err
 	} else if n != int(strLen) {
-		return "", fmt.Errorf("string is not fully received")
+		return nil, fmt.Errorf("string is not fully received")
 	}
-	return string(buf), nil
+	return buf, nil
 }
 
 func writeFrame(frame *RouterFrame, writer io.Writer) error {
@@ -56,10 +56,10 @@ func writeFrame(frame *RouterFrame, writer io.Writer) error {
 	if err := binary.Write(writer, binary.BigEndian, frame.ConnectionID); err != nil {
 		return err
 	}
-	if err := writeString(&frame.Token, writer); err != nil {
+	if err := writeBytes(frame.Token, writer); err != nil {
 		return err
 	}
-	return writeString(&frame.Channel, writer)
+	return writeBytes([]byte(frame.Channel), writer)
 }
 
 func readFrame(frame *RouterFrame, reader io.Reader) error {
@@ -74,13 +74,14 @@ func readFrame(frame *RouterFrame, reader io.Reader) error {
 		return err
 	}
 	var err error
-	frame.Token, err = readString(reader)
+	frame.Token, err = readBytes(reader)
 	if err != nil {
 		return err
 	}
-	frame.Channel, err = readString(reader)
+	channelBytes, err := readBytes(reader)
 	if err != nil {
 		return err
 	}
+	frame.Channel = string(channelBytes)
 	return nil
 }

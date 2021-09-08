@@ -16,7 +16,7 @@ type RouterClient struct {
 	// The public address of the Router.
 	routerAddress string
 	// token used for permission validation.
-	token string
+	token []byte
 	// If not nil, the client will use tls.Dial to connect to the Router.
 	tlsConfig *tls.Config
 }
@@ -29,7 +29,7 @@ func NewClientWithoutAuth(RouterAddress string) *RouterClient {
 }
 
 // NewClient creates a RouterClient with permision settings.
-func NewClient(RouterAddress string, Token string, TLSConfig *tls.Config) *RouterClient {
+func NewClient(RouterAddress string, Token []byte, TLSConfig *tls.Config) *RouterClient {
 	return &RouterClient{
 		routerAddress: RouterAddress,
 		token:         Token,
@@ -68,7 +68,7 @@ func (client *RouterClient) Dial(TargetChannel string) (net.Conn, error) {
 type RouterListener struct {
 	routerAddress string
 	channel       string
-	token         string
+	token         []byte
 	controlConn   net.Conn
 	tlsConfig     *tls.Config
 
@@ -94,7 +94,7 @@ func (address *RouterAddress) String() string {
 // NewRouterListenerWithConn creates a RouterListener structure.
 // Conn here can be a just initialized connectiono from TLS.
 func NewRouterListenerWithConn(
-	RouterAddress string, Token string, Channel string, TLSConfig *tls.Config) (*RouterListener, error) {
+	RouterAddress string, Token []byte, Channel string, TLSConfig *tls.Config) (*RouterListener, error) {
 	routerListener := RouterListener{
 		routerAddress: RouterAddress,
 		channel:       Channel,
@@ -136,11 +136,11 @@ func (listener *RouterListener) createConnection(network, address string) (net.C
 
 // NewListenerWithoutAuth creates a RouterListener structure and try to handshake with Router in `RouterAddress`.
 func NewListenerWithoutAuth(RouterAddress string, Channel string) (*RouterListener, error) {
-	return NewRouterListenerWithConn(RouterAddress, "", Channel, nil)
+	return NewRouterListenerWithConn(RouterAddress, nil, Channel, nil)
 }
 
 // NewListener creates a RouterListener.
-func NewListener(RouterAddress, Token, Channel string, TLSConfig *tls.Config) (*RouterListener, error) {
+func NewListener(RouterAddress string, Token []byte, Channel string, TLSConfig *tls.Config) (*RouterListener, error) {
 	return NewRouterListenerWithConn(RouterAddress, Token, Channel, TLSConfig)
 }
 
@@ -197,6 +197,9 @@ func (listener *RouterListener) Accept() (net.Conn, error) {
 		ConnectionID: frame.ConnectionID,
 	}, conn); err != nil {
 		return nil, fmt.Errorf("failed to handshake: %v", err)
+	}
+	if err := readFrame(&frame, conn); err != nil {
+		return nil, fmt.Errorf("failed while finishing handshake: %v", err)
 	}
 	return conn, nil
 }

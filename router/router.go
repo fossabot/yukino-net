@@ -175,6 +175,11 @@ func (router *Router) handleBridge(frame *RouterFrame, conn net.Conn) error {
 	}); err != nil {
 		return err
 	}
+	if err := connection.writeFrame(&RouterFrame{
+		Type: proto.Bridge,
+	}); err != nil {
+		return err
+	}
 
 	go func() {
 		io.Copy(peerConn.Connection, bufio.NewReader(conn))
