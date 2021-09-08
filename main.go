@@ -12,8 +12,6 @@ import (
 	"github.com/xpy123993/router/router"
 	"github.com/xpy123993/router/router/proto"
 	"github.com/xpy123993/router/token"
-
-	_ "embed"
 )
 
 type tokenAuthority struct {

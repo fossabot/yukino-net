@@ -110,7 +110,7 @@ func NewRouterListenerWithConn(
 		return nil, err
 	}
 	if tlsConn, ok := routerListener.controlConn.(*tls.Conn); ok {
-		log.Printf("connection is built above TLS")
+		log.Printf("Connection is built above TLS")
 		log.Printf("CipherSuite: %s", tls.CipherSuiteName(tlsConn.ConnectionState().CipherSuite))
 	}
 	if err := writeFrame(&RouterFrame{

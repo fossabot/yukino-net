@@ -166,7 +166,6 @@ func (router *Router) handleBridge(frame *RouterFrame, conn net.Conn) error {
 	defer cancelFn()
 
 	connection := newConn(conn)
-	defer connection.close()
 
 	router.mu.Lock()
 	peerConn, exist := router.inflightTable[frame.ConnectionID]
@@ -201,8 +200,7 @@ func (router *Router) handleBridge(frame *RouterFrame, conn net.Conn) error {
 	<-ctx.Done()
 
 	peerConn.close()
-
-	<-connection.Closed
+	connection.close()
 	return nil
 }
 
