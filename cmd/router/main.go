@@ -3,19 +3,34 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"flag"
+	"io/fs"
 	"log"
 	"os"
 	"time"
 
-	"github.com/spf13/viper"
 	"github.com/xpy123993/router/router"
 	"github.com/xpy123993/router/router/proto"
 	"github.com/xpy123993/router/token"
 )
 
+var (
+	configFile = flag.String("c", "config.json", "Server config file path.")
+	config     serverConfig
+)
+
 type tokenAuthority struct {
 	keyStore *token.KeyStore
+}
+
+type serverConfig struct {
+	UseTLS        bool   `json:"tls" default:"false"`
+	ListenAddress string `json:"listen-address" default:":11020"`
+	CaFile        string `json:"ca-file"`
+	CertFile      string `json:"cert-file"`
+	KeyFile       string `json:"key-file"`
+	TokenFile     string `json:"token-file"`
 }
 
 func (auth *tokenAuthority) CheckPermission(frame *router.RouterFrame) bool {
@@ -40,40 +55,55 @@ func (auth *tokenAuthority) GetExpirationTime(key []byte) time.Time {
 	return auth.keyStore.GetExpireTime(key)
 }
 
+func saveConfig() error {
+	fs, err := os.OpenFile(*configFile, 0755, fs.FileMode(os.O_CREATE))
+	if err != nil {
+		return err
+	}
+	defer fs.Close()
+	encoder := json.NewEncoder(fs)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(config)
+}
+
+func readConfig() error {
+	fs, err := os.Open(*configFile)
+	if err != nil {
+		return err
+	}
+	defer fs.Close()
+	return json.NewDecoder(fs).Decode(&config)
+}
+
 func loadVariables() {
-	viper.SetConfigName("config")
-	viper.SetConfigType("toml")
-	viper.AddConfigPath(".")
-	viper.SetDefault("use-tls", "false")
-	viper.SetDefault("listen-address", ":11020")
-
-	viper.SetDefault("ca-cert", "")
-	viper.SetDefault("server-key", "")
-	viper.SetDefault("server-cert", "")
-	viper.SetDefault("token-file", "")
-
-	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			viper.SafeWriteConfig()
+	if err := readConfig(); err != nil {
+		if os.IsNotExist(err) {
+			config.UseTLS = false
+			config.ListenAddress = ":11010"
+			if err := saveConfig(); err != nil {
+				panic(err)
+			} else {
+				log.Printf("Config file %s does not exist, creating one", *configFile)
+			}
 		}
 	}
 }
 
 func loadTLSConfig() *tls.Config {
-	if !viper.GetBool("use-tls") {
+	if !config.UseTLS {
 		return nil
 	}
-	certificate, err := tls.LoadX509KeyPair(viper.GetString("server-cert"), viper.GetString("server-key"))
+	certificate, err := tls.LoadX509KeyPair(config.CertFile, config.KeyFile)
 	if err != nil {
 		log.Fatalf("Error while loading TLS config: %v", err)
 	}
-	caBytes, err := os.ReadFile(viper.GetString("ca-cert"))
+	caBytes, err := os.ReadFile(config.CaFile)
 	if err != nil {
 		log.Fatalf("Error while loading TLS config: %v", err)
 	}
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(caBytes) {
-		log.Fatalf("Cannot parse CA certificate from %v", viper.GetString("ca-cert"))
+		log.Fatalf("Cannot parse CA certificate from %v", config.CaFile)
 	}
 	return &tls.Config{
 		RootCAs:      pool,
@@ -84,7 +114,7 @@ func loadTLSConfig() *tls.Config {
 }
 
 func loadKeyStore() *token.KeyStore {
-	tokenFile := viper.GetString("token-file")
+	tokenFile := config.TokenFile
 	if len(tokenFile) == 0 {
 		return nil
 	}
@@ -108,8 +138,7 @@ func loadKeyStore() *token.KeyStore {
 	}
 	return keyStore
 }
-
-func routerMode() {
+func main() {
 	loadVariables()
 
 	serviceRouter := router.NewRouter(router.RouterOption{
@@ -118,12 +147,7 @@ func routerMode() {
 		ListenConnectionKeepAlive: 30 * time.Second,
 		TLSConfig:                 loadTLSConfig(),
 	})
-	servingAddress := viper.GetString("listen-address")
+	servingAddress := config.ListenAddress
 	log.Printf("Starting listening on %s", servingAddress)
 	serviceRouter.ListenAndServe(servingAddress)
-}
-
-func main() {
-	flag.Parse()
-	routerMode()
 }
