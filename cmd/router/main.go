@@ -7,6 +7,7 @@ import (
 	"flag"
 	"io/fs"
 	"log"
+	"math/rand"
 	"os"
 	"time"
 
@@ -139,7 +140,9 @@ func loadKeyStore() *token.KeyStore {
 	return keyStore
 }
 func main() {
+	flag.Parse()
 	loadVariables()
+	rand.Seed(time.Now().UnixMicro())
 
 	serviceRouter := router.NewRouter(router.RouterOption{
 		TokenAuthority:            &tokenAuthority{keyStore: loadKeyStore()},
