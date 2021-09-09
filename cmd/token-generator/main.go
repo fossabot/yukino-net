@@ -18,6 +18,7 @@ var (
 )
 
 func main() {
+	flag.Parse()
 	keyStore, err := token.LoadKeyStore(*tokenFile)
 	if err != nil {
 		keyStore = token.CreateKeyStore()
