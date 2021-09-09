@@ -100,11 +100,9 @@ func TestPermissionDenied(t *testing.T) {
 	listener.Close()
 }
 
-func testSuite(t *testing.T, channel string, listener *router.RouterListener, client *router.RouterClient, router *router.Router) {
+func testSuite(t *testing.T, channel string, listener *router.RouterListener, client *router.RouterClient) {
 	pending := sync.WaitGroup{}
-
 	testMessage := []byte("hello world")
-
 	pending.Add(1)
 	go func() {
 		defer pending.Done()
@@ -152,17 +150,19 @@ func tlstestSuite(t *testing.T, serverca *x509.CertPool, clientca *x509.CertPool
 	}
 	testClient := router.NewClient(listener.Addr().String(), []byte("my-token"), &tlsConfig)
 	if success {
-		testSuite(t, "test", testListener, testClient, testRouter)
+		testSuite(t, "test", testListener, testClient)
 	}
 }
 
-func TestE2E(t *testing.T) {
+func initializeTestSet(t *testing.T) (*router.RouterListener, *router.RouterClient) {
 	listener, err := net.Listen("tcp", ":0")
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
 	}
-	defer listener.Close()
+	t.Cleanup(func() {
+		listener.Close()
+	})
 	testRouter := router.NewDefaultRouter()
 	go func() {
 		testRouter.Serve(listener)
@@ -172,7 +172,85 @@ func TestE2E(t *testing.T) {
 		t.Fatalf("cannot create listener: %v", err)
 	}
 	testClient := router.NewClientWithoutAuth(listener.Addr().String())
-	testSuite(t, "test", testListener, testClient, testRouter)
+	return testListener, testClient
+}
+
+func TestE2E(t *testing.T) {
+	testListener, testClient := initializeTestSet(t)
+	testSuite(t, "test", testListener, testClient)
+}
+
+func TestCancelFromListener(t *testing.T) {
+	testListener, testClient := initializeTestSet(t)
+	pending := sync.WaitGroup{}
+	pending.Add(1)
+	go func() {
+		defer pending.Done()
+		if conn, err := testListener.Accept(); err != nil {
+			t.Error(err)
+		} else {
+			conn.Close()
+		}
+	}()
+	p := make([]byte, 1)
+	conn, err := testClient.Dial("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Read(p); err != io.EOF {
+		t.Error("expect an EOF error here")
+	}
+	pending.Wait()
+}
+
+func TestCancelFromClient(t *testing.T) {
+	testListener, testClient := initializeTestSet(t)
+	pending := sync.WaitGroup{}
+	pending.Add(1)
+	go func() {
+		defer pending.Done()
+		conn, err := testListener.Accept()
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		p := make([]byte, 1)
+		if _, err := conn.Read(p); err != io.EOF {
+			t.Errorf("expect EOF error, got %v", err)
+		}
+	}()
+	conn, err := testClient.Dial("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+	pending.Wait()
+}
+
+func TestCloseListener(t *testing.T) {
+	testListener, testClient := initializeTestSet(t)
+	pending := sync.WaitGroup{}
+	pending.Add(1)
+	go func() {
+		defer pending.Done()
+		conn, err := testListener.Accept()
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		conn.Close()
+		testListener.Close()
+	}()
+	p := make([]byte, 1)
+	conn, err := testClient.Dial("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Read(p); err != io.EOF {
+		t.Error("expect an EOF error here")
+	}
+	pending.Wait()
+	if _, err := testClient.Dial("test"); err != io.EOF {
+		t.Error("expect an EOF error here")
+	}
 }
 
 func TestE2EWithTLS(t *testing.T) {

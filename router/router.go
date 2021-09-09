@@ -16,8 +16,6 @@ import (
 )
 
 const (
-	// InflightPoolMaxSize specifies the maximum pre-allocate connections for each receiver.
-	DefaultInflightPoolMaxSize       = 0
 	DefaultDialConnectionTimeout     = 2 * time.Second
 	DefaultListenConnectionKeepAlive = 20 * time.Second
 )
@@ -158,7 +156,6 @@ func (router *Router) handleDial(frame *RouterFrame, conn net.Conn) error {
 
 	<-dialConnection.Closed
 	return nil
-
 }
 
 func (router *Router) handleBridge(frame *RouterFrame, conn net.Conn) error {
