@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xpy123993/router/token"
+	"github.com/xpy123993/router/router/token"
 )
 
 const (

@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/xpy123993/router/token"
+	"github.com/xpy123993/router/router/token"
 )
 
 var (
