@@ -3,7 +3,7 @@ package utils
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/hex"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -64,7 +64,7 @@ func parseAuthParams(config *ClientConfig) (*tls.Config, []byte, error) {
 	if len(config.Token) == 0 {
 		return tlsConfig, nil, nil
 	}
-	token, err := hex.DecodeString(config.Token)
+	token, err := base64.RawStdEncoding.DecodeString(config.Token)
 	return tlsConfig, token, err
 }
 
