@@ -1,2 +1,4 @@
-x509/
+x509/*
+!x509/generate.sh
 token.json
+config.json
