@@ -18,6 +18,7 @@ import (
 const (
 	DefaultDialConnectionTimeout     = 2 * time.Second
 	DefaultListenConnectionKeepAlive = 20 * time.Second
+	DefaultServerBufferBytes         = 4096
 )
 
 // Authority will b e used by the router for ACL control.
@@ -46,12 +47,15 @@ type RouterOption struct {
 	ListenConnectionKeepAlive time.Duration
 	// TLSConfig specifies the TLS setting, if empty, the traffic will not be encrypted.
 	TLSConfig *tls.Config
+	// ChannelBufferBytes specifies the size of the buffer while bridging the channel.
+	ChannelBufferBytes uint64
 }
 
 var DefaultRouterOption = RouterOption{
 	TokenAuthority:            &noPermissionCheckAuthority{},
 	DialConnectionTimeout:     DefaultDialConnectionTimeout,
 	ListenConnectionKeepAlive: DefaultListenConnectionKeepAlive,
+	ChannelBufferBytes:        DefaultServerBufferBytes,
 }
 
 // Router proxies requests.
@@ -185,12 +189,12 @@ func (router *Router) handleBridge(frame *RouterFrame, conn net.Conn) error {
 	}
 
 	go func() {
-		io.Copy(peerConn.Connection, bufio.NewReader(conn))
+		io.Copy(peerConn.Connection, bufio.NewReaderSize(conn, int(router.option.ChannelBufferBytes)))
 		cancelFn()
 	}()
 
 	go func() {
-		io.Copy(conn, bufio.NewReader(peerConn.Connection))
+		io.Copy(conn, bufio.NewReaderSize(peerConn.Connection, int(router.option.ChannelBufferBytes)))
 		cancelFn()
 	}()
 

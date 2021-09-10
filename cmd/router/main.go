@@ -149,6 +149,7 @@ func main() {
 		DialConnectionTimeout:     3 * time.Second,
 		ListenConnectionKeepAlive: 30 * time.Second,
 		TLSConfig:                 loadTLSConfig(),
+		ChannelBufferBytes:        4096,
 	})
 	servingAddress := config.ListenAddress
 	log.Printf("Starting listening on %s", servingAddress)
