@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/xpy123993/router/router"
+	"github.com/xpy123993/router/libraries/router"
 )
 
 // ClientConfig stores the configuration to connect to the Router network.

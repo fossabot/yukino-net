@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xpy123993/router/router/keystore"
-	"github.com/xpy123993/router/router/proto"
+	"github.com/xpy123993/router/libraries/router/keystore"
+	"github.com/xpy123993/router/libraries/router/proto"
 )
 
 const (

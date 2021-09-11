@@ -5,7 +5,7 @@ import (
 	"log"
 
 	"github.com/armon/go-socks5"
-	"github.com/xpy123993/router/util"
+	"github.com/xpy123993/router/libraries/util"
 )
 
 var (

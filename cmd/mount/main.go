@@ -8,8 +8,8 @@ import (
 	"net"
 	"time"
 
-	"github.com/xpy123993/router/router"
-	"github.com/xpy123993/router/util"
+	"github.com/xpy123993/router/libraries/router"
+	"github.com/xpy123993/router/libraries/util"
 )
 
 var (
