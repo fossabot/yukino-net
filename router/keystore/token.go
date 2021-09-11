@@ -1,4 +1,4 @@
-package token
+package keystore
 
 import (
 	"crypto/rand"
@@ -165,7 +165,8 @@ func shouldAllow(requestType int, channelName string, rules []ACLRule) bool {
 
 // HashKey returns a hashed salted key, which will store on disk.
 func HashKey(key []byte) string {
-	return base64.RawStdEncoding.EncodeToString(sha512.New512_256().Sum(key))
+	hash := sha512.Sum512(key)
+	return base64.RawStdEncoding.EncodeToString(hash[:])
 }
 
 // GetSessionKey returns the matched key property.

@@ -15,8 +15,6 @@ import (
 type RouterClient struct {
 	// The public address of the Router.
 	routerAddress string
-	// token used for permission validation.
-	token []byte
 	// If not nil, the client will use tls.Dial to connect to the Router.
 	tlsConfig *tls.Config
 }
@@ -29,10 +27,9 @@ func NewClientWithoutAuth(RouterAddress string) *RouterClient {
 }
 
 // NewClient creates a RouterClient with permision settings.
-func NewClient(RouterAddress string, Token []byte, TLSConfig *tls.Config) *RouterClient {
+func NewClient(RouterAddress string, TLSConfig *tls.Config) *RouterClient {
 	return &RouterClient{
 		routerAddress: RouterAddress,
-		token:         Token,
 		tlsConfig:     TLSConfig,
 	}
 }
@@ -52,7 +49,6 @@ func (client *RouterClient) Dial(TargetChannel string) (net.Conn, error) {
 	}
 	if err := writeFrame(&RouterFrame{
 		Type:    proto.Dial,
-		Token:   client.token,
 		Channel: TargetChannel,
 	}, conn); err != nil {
 		return nil, err
@@ -68,7 +64,6 @@ func (client *RouterClient) Dial(TargetChannel string) (net.Conn, error) {
 type RouterListener struct {
 	routerAddress string
 	channel       string
-	token         []byte
 	controlConn   net.Conn
 	tlsConfig     *tls.Config
 
@@ -94,11 +89,10 @@ func (address *RouterAddress) String() string {
 // NewRouterListenerWithConn creates a RouterListener structure.
 // Conn here can be a just initialized connectiono from TLS.
 func NewRouterListenerWithConn(
-	RouterAddress string, Token []byte, Channel string, TLSConfig *tls.Config) (*RouterListener, error) {
+	RouterAddress string, Channel string, TLSConfig *tls.Config) (*RouterListener, error) {
 	routerListener := RouterListener{
 		routerAddress: RouterAddress,
 		channel:       Channel,
-		token:         Token,
 		tlsConfig:     TLSConfig,
 
 		mu:       sync.Mutex{},
@@ -115,7 +109,6 @@ func NewRouterListenerWithConn(
 	}
 	if err := writeFrame(&RouterFrame{
 		Type:    proto.Listen,
-		Token:   Token,
 		Channel: Channel,
 	}, routerListener.controlConn); err != nil {
 		return nil, err
@@ -136,12 +129,12 @@ func (listener *RouterListener) createConnection(network, address string) (net.C
 
 // NewListenerWithoutAuth creates a RouterListener structure and try to handshake with Router in `RouterAddress`.
 func NewListenerWithoutAuth(RouterAddress string, Channel string) (*RouterListener, error) {
-	return NewRouterListenerWithConn(RouterAddress, nil, Channel, nil)
+	return NewRouterListenerWithConn(RouterAddress, Channel, nil)
 }
 
 // NewListener creates a RouterListener.
-func NewListener(RouterAddress string, Token []byte, Channel string, TLSConfig *tls.Config) (*RouterListener, error) {
-	return NewRouterListenerWithConn(RouterAddress, Token, Channel, TLSConfig)
+func NewListener(RouterAddress string, Channel string, TLSConfig *tls.Config) (*RouterListener, error) {
+	return NewRouterListenerWithConn(RouterAddress, Channel, TLSConfig)
 }
 
 // Close closes the listener.
@@ -192,7 +185,6 @@ func (listener *RouterListener) Accept() (net.Conn, error) {
 	}
 	if err := writeFrame(&RouterFrame{
 		Type:         proto.Bridge,
-		Token:        listener.token,
 		Channel:      listener.channel,
 		ConnectionID: frame.ConnectionID,
 	}, conn); err != nil {

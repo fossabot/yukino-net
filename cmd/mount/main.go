@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/xpy123993/router/router"
-	"github.com/xpy123993/router/utils"
+	"github.com/xpy123993/router/util"
 )
 
 var (
@@ -41,7 +41,7 @@ func startProxy() {
 	if err != nil {
 		log.Fatalf("error while listening on proxy channel: %v", err)
 	}
-	routerClient, err := utils.CreateClientFromConfig(*configFile)
+	routerClient, err := util.CreateClientFromConfig(*configFile)
 	if err != nil {
 		log.Fatalf("failed to initialize client: %v", err)
 	}

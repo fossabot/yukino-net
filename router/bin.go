@@ -14,7 +14,6 @@ const MaxChannelNameLength = 256
 type RouterFrame struct {
 	Type         byte
 	ConnectionID uint64
-	Token        []byte
 	Channel      string
 }
 
@@ -56,9 +55,6 @@ func writeFrame(frame *RouterFrame, writer io.Writer) error {
 	if err := binary.Write(writer, binary.BigEndian, frame.ConnectionID); err != nil {
 		return err
 	}
-	if err := writeBytes(frame.Token, writer); err != nil {
-		return err
-	}
 	return writeBytes([]byte(frame.Channel), writer)
 }
 
@@ -71,11 +67,6 @@ func readFrame(frame *RouterFrame, reader io.Reader) error {
 	}
 	frame.Type = buf[0]
 	if err := binary.Read(reader, binary.BigEndian, &frame.ConnectionID); err != nil {
-		return err
-	}
-	var err error
-	frame.Token, err = readBytes(reader)
-	if err != nil {
 		return err
 	}
 	channelBytes, err := readBytes(reader)

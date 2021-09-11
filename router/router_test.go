@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"sync"
 	"testing"
@@ -12,7 +13,6 @@ import (
 
 	"github.com/xpy123993/router/router"
 	"github.com/xpy123993/router/router/common"
-	"github.com/xpy123993/router/router/proto"
 )
 
 func acceptAndEqual(listener net.Listener, message string) error {
@@ -45,26 +45,24 @@ func dialAndSend(client *router.RouterClient, channel string, message []byte) er
 }
 
 type permissionDeniedAuthority struct{}
-type myTokenAuthrority struct{}
+type myTokenAuthrority struct {
+	clientCert *tls.Certificate
+}
 
-func (*permissionDeniedAuthority) CheckPermission(*router.RouterFrame) bool { return false }
+func (*permissionDeniedAuthority) CheckPermission(*router.RouterFrame, []byte) bool { return false }
 func (*permissionDeniedAuthority) GetExpirationTime([]byte) time.Time {
 	return time.Now().Add(24 * time.Hour)
 }
-func (*myTokenAuthrority) CheckPermission(frame *router.RouterFrame) bool {
-	switch frame.Type {
-	case proto.Close:
+
+func (auth *myTokenAuthrority) CheckPermission(frame *router.RouterFrame, token []byte) bool {
+	if auth.clientCert == nil {
 		return true
-	case proto.Nop:
-		return true
-	case proto.Bridge:
-		return string(frame.Token) == "my-token"
-	case proto.Listen:
-		return string(frame.Token) == "my-token"
-	case proto.Dial:
-		return string(frame.Token) == "my-token"
 	}
-	return false
+	cert, err := x509.ParseCertificate(auth.clientCert.Certificate[0])
+	if err != nil {
+		log.Fatalf("cannot parse certificate: %v", err)
+	}
+	return string(token) == string(cert.Signature)
 }
 func (*myTokenAuthrority) GetExpirationTime([]byte) time.Time {
 	return time.Now().Add(24 * time.Hour)
@@ -127,7 +125,9 @@ func tlstestSuite(t *testing.T, serverca *x509.CertPool, clientca *x509.CertPool
 		Certificates: []tls.Certificate{*servercert},
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 	}
-	option.TokenAuthority = &myTokenAuthrority{}
+	option.TokenAuthority = &myTokenAuthrority{
+		clientCert: clientcert,
+	}
 	testRouter := router.NewRouter(option)
 	listener, err := tls.Listen("tcp", ":0", option.TLSConfig)
 	if err != nil {
@@ -144,11 +144,11 @@ func tlstestSuite(t *testing.T, serverca *x509.CertPool, clientca *x509.CertPool
 		ServerName:   common.ServerName,
 	}
 
-	testListener, err := router.NewListener(listener.Addr().String(), []byte("my-token"), "test", &tlsConfig)
+	testListener, err := router.NewListener(listener.Addr().String(), "test", &tlsConfig)
 	if success == (err != nil) {
 		t.Fatalf("unexpect result: %v", err)
 	}
-	testClient := router.NewClient(listener.Addr().String(), []byte("my-token"), &tlsConfig)
+	testClient := router.NewClient(listener.Addr().String(), &tlsConfig)
 	if success {
 		testSuite(t, "test", testListener, testClient)
 	}

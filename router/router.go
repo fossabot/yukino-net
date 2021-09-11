@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
-	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
@@ -12,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/xpy123993/router/router/keystore"
 	"github.com/xpy123993/router/router/proto"
 )
 
@@ -24,7 +24,7 @@ const (
 // Authority will b e used by the router for ACL control.
 type Authority interface {
 	// Returns if the permission check is passed for `frame`.
-	CheckPermission(frame *RouterFrame) bool
+	CheckPermission(frame *RouterFrame, key []byte) bool
 
 	// Returns the expiration time of the key. Router will use this to set a connection deadline.
 	GetExpirationTime(key []byte) time.Time
@@ -32,7 +32,7 @@ type Authority interface {
 
 type noPermissionCheckAuthority struct{}
 
-func (*noPermissionCheckAuthority) CheckPermission(*RouterFrame) bool { return true }
+func (*noPermissionCheckAuthority) CheckPermission(*RouterFrame, []byte) bool { return true }
 func (*noPermissionCheckAuthority) GetExpirationTime([]byte) time.Time {
 	return time.Now().Add(24 * time.Hour)
 }
@@ -213,9 +213,16 @@ func (router *Router) handleConnection(conn net.Conn) error {
 	if err := readFrame(&frame, conn); err != nil {
 		return fmt.Errorf("closing connection from %v due to error: %v", conn.RemoteAddr(), err)
 	}
-	if !router.option.TokenAuthority.CheckPermission(&frame) {
-		return fmt.Errorf("permission denied: invalid token `%s`",
-			base64.RawStdEncoding.EncodeToString(frame.Token))
+	var key []byte
+	if tlsConn, ok := conn.(*tls.Conn); ok {
+		if err := tlsConn.Handshake(); err != nil {
+			return fmt.Errorf("handshake failed with %s", conn.RemoteAddr().String())
+		}
+		key = tlsConn.ConnectionState().PeerCertificates[0].Signature
+	}
+	if !router.option.TokenAuthority.CheckPermission(&frame, key) {
+		return fmt.Errorf("permission denied: peer token `%s` from address `%s`",
+			keystore.HashKey(key), conn.RemoteAddr().String())
 	}
 
 	switch frame.Type {
@@ -237,7 +244,7 @@ func (router *Router) Serve(listener net.Listener) error {
 			return err
 		}
 		go func() {
-			if err := router.handleConnection(conn); err != nil {
+			if err := router.handleConnection(conn); err != nil && err != io.EOF {
 				log.Print(err.Error())
 			}
 		}()

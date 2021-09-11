@@ -1,9 +1,8 @@
-package utils
+package util
 
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -30,9 +29,6 @@ type ClientConfig struct {
 
 	// ClientKey stores the filename to the client's key file in PEM format.
 	ClientKey string `json:"key-file"`
-
-	// Token stores the API key for authentication.
-	Token string `json:"token"`
 }
 
 func createTLSConfig(config *ClientConfig) (*tls.Config, error) {
@@ -56,18 +52,6 @@ func createTLSConfig(config *ClientConfig) (*tls.Config, error) {
 	}, nil
 }
 
-func parseAuthParams(config *ClientConfig) (*tls.Config, []byte, error) {
-	tlsConfig, err := createTLSConfig(config)
-	if err != nil {
-		return nil, nil, err
-	}
-	if len(config.Token) == 0 {
-		return tlsConfig, nil, nil
-	}
-	token, err := base64.RawStdEncoding.DecodeString(config.Token)
-	return tlsConfig, token, err
-}
-
 // LoadClientConfig loads client configuration from `ConfigFile`, returns any error encountered.
 func LoadClientConfig(ConfigFile string) (*ClientConfig, error) {
 	data, err := os.ReadFile(ConfigFile)
@@ -87,11 +71,11 @@ func CreateListenerFromConfig(ConfigFile string, ListenChannel string) (*router.
 	if err != nil {
 		return nil, err
 	}
-	tlsConfig, token, err := parseAuthParams(config)
+	tlsConfig, err := createTLSConfig(config)
 	if err != nil {
-		return nil, fmt.Errorf("error while parsing token: %v", err)
+		return nil, fmt.Errorf("error while loading certificate: %v", err)
 	}
-	return router.NewListener(config.RouterAddress, token, ListenChannel, tlsConfig)
+	return router.NewListener(config.RouterAddress, ListenChannel, tlsConfig)
 }
 
 // CreateClientFromConfig creates a client from `ConfigFile`.
@@ -100,9 +84,9 @@ func CreateClientFromConfig(ConfigFile string) (*router.RouterClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	tlsConfig, token, err := parseAuthParams(config)
+	tlsConfig, err := createTLSConfig(config)
 	if err != nil {
 		return nil, fmt.Errorf("error while parsing token: %v", err)
 	}
-	return router.NewClient(config.RouterAddress, token, tlsConfig), nil
+	return router.NewClient(config.RouterAddress, tlsConfig), nil
 }

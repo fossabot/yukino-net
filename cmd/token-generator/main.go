@@ -1,38 +1,26 @@
 package main
 
 import (
-	"flag"
+	"crypto/tls"
+	"crypto/x509"
 	"log"
-	"time"
+	"os"
 
-	"github.com/xpy123993/router/router/token"
-)
-
-var (
-	tokenFile     = flag.String("token-file", "token.json", "Token file to edit")
-	keyName       = flag.String("name", "", "The ID of the key")
-	duration      = flag.Duration("duration", 180*24*time.Hour, "Duration of the key")
-	invoke        = flag.Bool("invoke", false, "Specifies if the key has invoke permission")
-	listen        = flag.Bool("listen", false, "Specifies if the key has listen permission")
-	channelRegexp = flag.String("channel", ".*", "Specifies the channel regexp to apply the rule")
+	"github.com/xpy123993/router/router/keystore"
 )
 
 func main() {
-	flag.Parse()
-	keyStore, err := token.LoadKeyStore(*tokenFile)
+	if len(os.Args) < 2 {
+		log.Printf("Usage: token-generator <cert file> <key file>\nThis tool will generate the corresponding token that can be used in token configs.")
+		return
+	}
+	cert, err := tls.LoadX509KeyPair(os.Args[1], os.Args[2])
 	if err != nil {
-		keyStore = token.CreateKeyStore()
+		log.Fatalf("failed to load the certificate: %v", err)
 	}
-	rule := token.ACLRule{}
-	if *invoke {
-		rule.InvokeControl = token.Allow
+	certificate, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		log.Fatalf("failed to parse the certificate: %v", err)
 	}
-	if *listen {
-		rule.ListenControl = token.Allow
-	}
-	rule.ChannelRegexp = *channelRegexp
-	log.Printf("New Token: %s", keyStore.GenerateKeyAndRegister(*keyName, []token.ACLRule{rule}, *duration))
-	if err := keyStore.Save(*tokenFile); err != nil {
-		log.Fatalf("failed to save the token file: %v", err)
-	}
+	log.Printf("Token is: %s", keystore.HashKey(certificate.Signature))
 }

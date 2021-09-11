@@ -5,7 +5,7 @@ import (
 	"log"
 
 	"github.com/armon/go-socks5"
-	"github.com/xpy123993/router/utils"
+	"github.com/xpy123993/router/util"
 )
 
 var (
@@ -14,7 +14,7 @@ var (
 )
 
 func proxyMode() {
-	listener, err := utils.CreateListenerFromConfig(*configFile, *channel)
+	listener, err := util.CreateListenerFromConfig(*configFile, *channel)
 	if err != nil {
 		log.Fatalf("error while listening on proxy channel: %v", err)
 	}

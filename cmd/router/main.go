@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/xpy123993/router/router"
+	"github.com/xpy123993/router/router/keystore"
 	"github.com/xpy123993/router/router/proto"
-	"github.com/xpy123993/router/router/token"
 )
 
 var (
@@ -22,7 +22,7 @@ var (
 )
 
 type tokenAuthority struct {
-	keyStore *token.KeyStore
+	keyStore *keystore.KeyStore
 }
 
 type serverConfig struct {
@@ -34,17 +34,17 @@ type serverConfig struct {
 	TokenFile     string `json:"token-file"`
 }
 
-func (auth *tokenAuthority) CheckPermission(frame *router.RouterFrame) bool {
+func (auth *tokenAuthority) CheckPermission(frame *router.RouterFrame, token []byte) bool {
 	if auth.keyStore == nil {
 		return true
 	}
 	switch frame.Type {
 	case proto.Dial:
-		return auth.keyStore.CheckPermission(token.InvokeAction, frame.Channel, frame.Token)
+		return auth.keyStore.CheckPermission(keystore.InvokeAction, frame.Channel, token)
 	case proto.Bridge:
-		return auth.keyStore.CheckPermission(token.ListenAction, frame.Channel, frame.Token)
+		return auth.keyStore.CheckPermission(keystore.ListenAction, frame.Channel, token)
 	case proto.Listen:
-		return auth.keyStore.CheckPermission(token.ListenAction, frame.Channel, frame.Token)
+		return auth.keyStore.CheckPermission(keystore.ListenAction, frame.Channel, token)
 	}
 	return false
 }
@@ -117,31 +117,25 @@ func loadTLSConfig() *tls.Config {
 	}
 }
 
-func loadKeyStore() *token.KeyStore {
+func loadKeyStore() *keystore.KeyStore {
 	tokenFile := config.TokenFile
 	if len(tokenFile) == 0 {
 		return nil
 	}
-	keyStore, err := token.LoadKeyStore(tokenFile)
+	keyStore, err := keystore.LoadKeyStore(tokenFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			keyStore := token.CreateKeyStore()
-			log.Printf("Generated a temporary key: %s", keyStore.GenerateKeyAndRegister("temp-key", []token.ACLRule{
-				{
-					ListenControl: token.Allow,
-					InvokeControl: token.Allow,
-					ChannelRegexp: ".*",
-				}}, 5*time.Minute))
-			log.Println("This key will expire in 5 minutes.")
+			keyStore := keystore.CreateKeyStore()
 			if err := keyStore.Save(tokenFile); err != nil {
-				log.Fatalf("cannot save token: %v", err)
+				log.Fatalf("cannot save created token file to disk: %v", err)
 			}
 		} else {
-			log.Fatalf("Cannot load specified keystore: %v", err)
+			log.Fatalf("cannot load specified keystore: %v", err)
 		}
 	}
 	return keyStore
 }
+
 func main() {
 	flag.Parse()
 	loadVariables()

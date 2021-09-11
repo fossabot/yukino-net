@@ -1,4 +1,4 @@
-package token_test
+package keystore_test
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xpy123993/router/router/token"
+	"github.com/xpy123993/router/router/keystore"
 )
 
 const (
@@ -29,22 +29,22 @@ func randomBytes(n int) []byte {
 	return p
 }
 
-func checkPermission(store *token.KeyStore, key []byte, channel string, invokeControl bool, invokeListen bool) error {
-	if code := store.CheckPermission(token.InvokeAction, channel, key); code != invokeControl {
+func checkPermission(store *keystore.KeyStore, key []byte, channel string, invokeControl bool, invokeListen bool) error {
+	if code := store.CheckPermission(keystore.InvokeAction, channel, key); code != invokeControl {
 		return fmt.Errorf("invoke permission mismatched: (real) %v vs (expected) %v", code, invokeControl)
 	}
-	if code := store.CheckPermission(token.ListenAction, channel, key); code != invokeListen {
+	if code := store.CheckPermission(keystore.ListenAction, channel, key); code != invokeListen {
 		return fmt.Errorf("invoke permission mismatched: (real) %v vs (expected) %v", code, invokeListen)
 	}
 	return nil
 }
 
-func initializeKeyStoreWithUnExpiredKey(invokeControl int, listenControl int, channelRegexp string) ([]byte, *token.KeyStore) {
-	keyStore := token.CreateKeyStore()
+func initializeKeyStoreWithUnExpiredKey(invokeControl int, listenControl int, channelRegexp string) ([]byte, *keystore.KeyStore) {
+	keyStore := keystore.CreateKeyStore()
 	key := randomBytes(32)
-	keyStore.RegisterKey(key, token.SessionKey{
+	keyStore.RegisterKey(key, keystore.SessionKey{
 		Expire: time.Now().Add(time.Hour),
-		Rules: []token.ACLRule{
+		Rules: []keystore.ACLRule{
 			{
 				InvokeControl: invokeControl,
 				ListenControl: listenControl,
@@ -56,7 +56,7 @@ func initializeKeyStoreWithUnExpiredKey(invokeControl int, listenControl int, ch
 }
 
 func TestUtilFunctionSanityCheck(t *testing.T) {
-	key, keyStore := initializeKeyStoreWithUnExpiredKey(token.Allow, token.Deny, ".*")
+	key, keyStore := initializeKeyStoreWithUnExpiredKey(keystore.Allow, keystore.Deny, ".*")
 	if err := checkPermission(keyStore, key, "test", true, false); err != nil {
 		t.Error(err)
 	}
@@ -72,36 +72,36 @@ func TestUtilFunctionSanityCheck(t *testing.T) {
 }
 
 func TestAuthFailedOnKeyNotExist(t *testing.T) {
-	_, keyStore := initializeKeyStoreWithUnExpiredKey(token.Allow, token.Allow, ".*")
+	_, keyStore := initializeKeyStoreWithUnExpiredKey(keystore.Allow, keystore.Allow, ".*")
 	if err := checkPermission(keyStore, randomBytes(32), "test", false, false); err != nil {
 		t.Error(err)
 	}
 }
 
 func TestAuthForListenOnlyKey(t *testing.T) {
-	key, keyStore := initializeKeyStoreWithUnExpiredKey(token.UndefinedACL, token.Allow, ".*")
+	key, keyStore := initializeKeyStoreWithUnExpiredKey(keystore.UndefinedACL, keystore.Allow, ".*")
 	if err := checkPermission(keyStore, key, "test", false, true); err != nil {
 		t.Error(err)
 	}
-	key, keyStore = initializeKeyStoreWithUnExpiredKey(token.Deny, token.Allow, ".*")
+	key, keyStore = initializeKeyStoreWithUnExpiredKey(keystore.Deny, keystore.Allow, ".*")
 	if err := checkPermission(keyStore, key, "test", false, true); err != nil {
 		t.Error(err)
 	}
 }
 
 func TestAuthForInvokeOnlyKey(t *testing.T) {
-	key, keyStore := initializeKeyStoreWithUnExpiredKey(token.Allow, token.UndefinedACL, ".*")
+	key, keyStore := initializeKeyStoreWithUnExpiredKey(keystore.Allow, keystore.UndefinedACL, ".*")
 	if err := checkPermission(keyStore, key, "test", true, false); err != nil {
 		t.Error(err)
 	}
-	key, keyStore = initializeKeyStoreWithUnExpiredKey(token.Allow, token.Deny, ".*")
+	key, keyStore = initializeKeyStoreWithUnExpiredKey(keystore.Allow, keystore.Deny, ".*")
 	if err := checkPermission(keyStore, key, "test", true, false); err != nil {
 		t.Error(err)
 	}
 }
 
 func TestAuthForChannelMismatchedKey(t *testing.T) {
-	key, keyStore := initializeKeyStoreWithUnExpiredKey(token.Allow, token.Allow, "test")
+	key, keyStore := initializeKeyStoreWithUnExpiredKey(keystore.Allow, keystore.Allow, "test")
 	if err := checkPermission(keyStore, key, "test", true, true); err != nil {
 		t.Error(err)
 	}
@@ -114,23 +114,23 @@ func TestAuthForChannelMismatchedKey(t *testing.T) {
 }
 
 func TestAuthForExpiredKey(t *testing.T) {
-	key, keyStore := initializeKeyStoreWithUnExpiredKey(token.Allow, token.Allow, "test")
+	key, keyStore := initializeKeyStoreWithUnExpiredKey(keystore.Allow, keystore.Allow, "test")
 	if err := checkPermission(keyStore, key, "test", true, true); err != nil {
 		t.Error(err)
 	}
-	keyStore.Table[token.HashKey(key)].Expire = time.Now().Add(-time.Hour)
+	keyStore.Table[keystore.HashKey(key)].Expire = time.Now().Add(-time.Hour)
 	if err := checkPermission(keyStore, key, "test", false, false); err != nil {
 		t.Error(err)
 	}
 }
 
 func TestAuthLoadSave(t *testing.T) {
-	key, oldKeyStore := initializeKeyStoreWithUnExpiredKey(token.Allow, token.Deny, "test")
+	key, oldKeyStore := initializeKeyStoreWithUnExpiredKey(keystore.Allow, keystore.Deny, "test")
 	configFile := path.Join(t.TempDir(), "auth.json")
 	if err := oldKeyStore.Save(configFile); err != nil {
 		t.Error(err)
 	}
-	keyStore, err := token.LoadKeyStore(configFile)
+	keyStore, err := keystore.LoadKeyStore(configFile)
 	if err != nil {
 		t.Error(err)
 	}
@@ -140,8 +140,8 @@ func TestAuthLoadSave(t *testing.T) {
 }
 
 func TestAuthCleanUp(t *testing.T) {
-	key, keyStore := initializeKeyStoreWithUnExpiredKey(token.Allow, token.Deny, "test")
-	keyStore.Table[token.HashKey(key)].Expire = time.Now().Add(-time.Hour)
+	key, keyStore := initializeKeyStoreWithUnExpiredKey(keystore.Allow, keystore.Deny, "test")
+	keyStore.Table[keystore.HashKey(key)].Expire = time.Now().Add(-time.Hour)
 	keyStore.CleanUp()
 	if len(keyStore.Table) != 0 {
 		t.Error()
@@ -149,7 +149,7 @@ func TestAuthCleanUp(t *testing.T) {
 }
 
 func TestNoPlainTokenStored(t *testing.T) {
-	key, keyStore := initializeKeyStoreWithUnExpiredKey(token.UndefinedACL, token.Allow, ".*")
+	key, keyStore := initializeKeyStoreWithUnExpiredKey(keystore.UndefinedACL, keystore.Allow, ".*")
 	if _, ok := keyStore.Table[string(key)]; ok {
 		t.Error("key is stored in plain text")
 	}

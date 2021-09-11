@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/xpy123993/router/utils"
+	"github.com/xpy123993/router/util"
 )
 
 var noCacheHeaders = map[string]string{
@@ -48,7 +48,7 @@ func main() {
 	directory := flag.String("d", ".", "the directory of static file to host")
 	flag.Parse()
 
-	listener, err := utils.CreateListenerFromConfig(*configFile, *channel)
+	listener, err := util.CreateListenerFromConfig(*configFile, *channel)
 	if err != nil {
 		log.Fatalf("failed to listen on channel: %v", err)
 	}
