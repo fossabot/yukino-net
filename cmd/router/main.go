@@ -27,7 +27,7 @@ type tokenAuthority struct {
 
 type serverConfig struct {
 	UseTLS        bool   `json:"tls" default:"false"`
-	ListenAddress string `json:"listen-address" default:":11020"`
+	ListenAddress string `json:"router-address" default:":11020"`
 	CaFile        string `json:"ca-file"`
 	CertFile      string `json:"cert-file"`
 	KeyFile       string `json:"key-file"`
@@ -87,6 +87,9 @@ func loadVariables() {
 				log.Printf("Config file %s does not exist, creating one", *configFile)
 			}
 		}
+	}
+	if len(config.ListenAddress) == 0 {
+		log.Fatalf("invalid configuration: router-address is not specified")
 	}
 }
 
