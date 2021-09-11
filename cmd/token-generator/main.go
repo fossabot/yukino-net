@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 2 {
+	if len(os.Args) < 3 {
 		log.Printf("Usage: token-generator <cert file> <key file>\nThis tool will generate the corresponding token that can be used in token configs.")
 		return
 	}
