@@ -138,17 +138,20 @@ func tlstestSuite(t *testing.T, serverca *x509.CertPool, clientca *x509.CertPool
 	go func() {
 		testRouter.Serve(listener)
 	}()
-	tlsConfig := tls.Config{
-		RootCAs:      clientca,
-		Certificates: []tls.Certificate{*clientcert},
-		ServerName:   "test",
+	var tlsConfig *tls.Config
+	if clientcert != nil {
+		tlsConfig = &tls.Config{
+			RootCAs:      clientca,
+			Certificates: []tls.Certificate{*clientcert},
+			ServerName:   "test",
+		}
 	}
 
-	testListener, err := router.NewListener(listener.Addr().String(), "test", &tlsConfig)
+	testListener, err := router.NewListener(listener.Addr().String(), "test", tlsConfig)
 	if success == (err != nil) {
 		t.Fatalf("unexpect result: %v", err)
 	}
-	testClient := router.NewClient(listener.Addr().String(), &tlsConfig)
+	testClient := router.NewClient(listener.Addr().String(), tlsConfig)
 	if success {
 		testSuite(t, "test", testListener, testClient)
 	}
@@ -292,6 +295,7 @@ func TestE2EWithTLSAuthFailed(t *testing.T) {
 	tlstestSuite(t, clientPool, clientPool, &serverCert, &clientCert, false)
 	tlstestSuite(t, serverPool, clientPool, &clientCert, &clientCert, false)
 	tlstestSuite(t, serverPool, serverPool, &serverCert, &clientCert, false)
+	tlstestSuite(t, serverPool, nil, &serverCert, nil, false)
 }
 
 func BenchmarkSmallConnection(b *testing.B) {
