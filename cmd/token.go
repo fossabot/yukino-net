@@ -110,7 +110,6 @@ func AddCertPermission(KeyFile, CertFile, TokenFile string) error {
 	if err != nil {
 		return fmt.Errorf("failed to parse the certificate: %v", err)
 	}
-	log.Printf("Token is: %s", keystore.HashKey(certificate.Signature))
 
 	keyStore, err := util.CreateOrLoadKeyStore(TokenFile)
 	if err != nil {
