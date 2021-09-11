@@ -9,6 +9,8 @@ import (
 
 var configFile string
 var rpcTimeout time.Duration
+var rpcKey string
+var rpcPubKey []string
 
 var rootCmd = &cobra.Command{
 	Use:   "yukino-net",
@@ -174,6 +176,14 @@ var certAddPermRule = &cobra.Command{
 	},
 }
 
+var certNewPubKey = &cobra.Command{
+	Use:   "new-pubkey",
+	Short: "Generate a pair of pubkey, used for rpc server side authentication.",
+	Run: func(cmd *cobra.Command, args []string) {
+		GenerateEd25519()
+	},
+}
+
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatalf("failed to execute Root command: %v", err)
@@ -182,6 +192,8 @@ func Execute() {
 
 func init() {
 	endpointCallCmd.Flags().DurationVarP(&rpcTimeout, "timeout", "t", 3*time.Second, "The timeout to invoke the RPC service.")
+	endpointCallCmd.Flags().StringVarP(&rpcKey, "master-key", "m", "", "If not empty, a signature will be created for server side authentication.")
+	endpointServerCmd.Flags().StringArrayVarP(&rpcPubKey, "master-key", "m", []string{}, "If not empty, the server will only accept ACL from signed by those keys.")
 	endpointCmd.AddCommand(endpointServerCmd)
 	endpointCmd.AddCommand(endpointCallCmd)
 	endpointCmd.AddCommand(endpointWebhookCmd)
@@ -190,6 +202,7 @@ func init() {
 	mountCmd.AddCommand(mountLocalCmd)
 	mountCmd.AddCommand(mountRemoteCmd)
 
+	certCmd.AddCommand(certNewPubKey)
 	certCmd.AddCommand(certGenCACmd)
 	certCmd.AddCommand(certGenCertCmd)
 	certCmd.AddCommand(certAddPermRule)

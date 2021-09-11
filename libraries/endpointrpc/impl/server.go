@@ -14,13 +14,30 @@ import (
 
 type EndPointServer struct {
 	pb.UnimplementedEndpointServer
+
+	ACL map[[32]byte]bool
 }
 
 func NewServer() *EndPointServer {
-	return &EndPointServer{}
+	return &EndPointServer{
+		ACL: map[[32]byte]bool{},
+	}
+}
+
+func NewServerWithACL(ACL [][32]byte) *EndPointServer {
+	acl := make(map[[32]byte]bool)
+	for _, nACL := range ACL {
+		acl[nACL] = true
+	}
+	return &EndPointServer{
+		ACL: acl,
+	}
 }
 
 func (server *EndPointServer) ShellProxy(ctx context.Context, request *pb.ShellProxyRequest) (*pb.ShellProxyResponse, error) {
+	if err := Verify(server.ACL, request); err != nil {
+		return nil, status.Error(codes.Unauthenticated, err.Error())
+	}
 	commandSeq, err := shlex.Split(request.GetCommand())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "error while interpreting command: %v", err)

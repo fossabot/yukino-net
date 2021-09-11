@@ -16,6 +16,7 @@ import (
 	pb "github.com/xpy123993/yukino-net/libraries/endpointrpc/proto"
 	"github.com/xpy123993/yukino-net/libraries/util"
 	"golang.org/x/crypto/argon2"
+	"golang.org/x/crypto/ed25519"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -41,10 +42,18 @@ func InvokeEndPointShellProxyService(ctx context.Context, ConfigFile, Channel, C
 	if err != nil {
 		return "", err
 	}
-	resp, err := client.ShellProxy(ctx, &pb.ShellProxyRequest{
+	request := pb.ShellProxyRequest{
 		Command:  Command,
 		Deadline: timestamppb.New(time.Now().Add(timeout)),
-	})
+	}
+	if len(rpcKey) > 0 {
+		priv, err := base64.RawStdEncoding.DecodeString(rpcKey)
+		if err != nil {
+			return "", fmt.Errorf("error while loading public key")
+		}
+		impl.Sign(priv, &request)
+	}
+	resp, err := client.ShellProxy(ctx, &request)
 	if err != nil {
 		return "", err
 	}
@@ -56,8 +65,22 @@ func StartEndPointService(ctx context.Context, ConfigFile, Channel string) error
 	if err != nil {
 		return err
 	}
+	var server *impl.EndPointServer
+	if len(rpcPubKey) > 0 {
+		keys := make([][32]byte, len(rpcPubKey))
+		for i, key := range rpcPubKey {
+			rawKey, err := base64.RawStdEncoding.DecodeString(key)
+			if err != nil {
+				return fmt.Errorf("failed to extract public key: %v", err)
+			}
+			copy(keys[i][:], rawKey)
+		}
+		server = impl.NewServerWithACL(keys)
+	} else {
+		server = impl.NewServer()
+	}
 	rpcServer := grpc.NewServer()
-	pb.RegisterEndpointServer(rpcServer, impl.NewServer())
+	pb.RegisterEndpointServer(rpcServer, server)
 
 	log.Printf("Starting EndPoint service on channel `%s`", Channel)
 	return rpcServer.Serve(listener)
@@ -69,6 +92,14 @@ func GetHashToken(Token string) string {
 		return "invalid"
 	}
 	return base64.RawURLEncoding.EncodeToString(argon2.IDKey(data, []byte("yapp/net/salt"), 1, 64*1024, 4, 64))
+}
+
+func GenerateEd25519() {
+	pub, priv, err := ed25519.GenerateKey(cryptorand.Reader)
+	if err != nil {
+		log.Fatalf("failed to generate key: %v", err)
+	}
+	fmt.Printf("Public Key: %s\nPrivate Key: %s\n", base64.RawStdEncoding.EncodeToString(pub), base64.RawStdEncoding.EncodeToString(priv))
 }
 
 func StartEndPointWebhook(ctx context.Context, ConfigFile, LocalAddr, HashToken string) error {

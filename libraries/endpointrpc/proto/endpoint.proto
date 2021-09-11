@@ -11,6 +11,10 @@ message ShellProxyRequest {
     string command = 1;
     // The deadline to execute the command, must be set to a future time.
     google.protobuf.Timestamp deadline = 2;
+    // A ed25519 public key for client side authentication
+    optional bytes public = 3;
+    // The signature of the `command` and `deadline` field.
+    optional bytes signature = 4;
 }
 
 // ShellProxyResponse stores a result of a shell command from the ShellProxy RPC.

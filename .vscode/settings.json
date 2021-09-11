@@ -3,6 +3,7 @@
         "path": "/usr/bin/protoc",
         "compile_on_save": true,
         "options": [
+            "--experimental_allow_proto3_optional",
             "--proto_path=${workspaceRoot}/libraries/endpointrpc/proto",
             "--go_out=./libraries/endpointrpc/proto",
             "--go_opt=paths=source_relative",
