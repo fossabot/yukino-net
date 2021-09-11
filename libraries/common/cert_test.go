@@ -7,7 +7,7 @@ import (
 )
 
 func TestSanity(t *testing.T) {
-	_, _, _, err := common.GenerateCertSuite()
+	_, _, _, err := common.GenerateTestCertSuite()
 	if err != nil {
 		t.Error(err)
 	}

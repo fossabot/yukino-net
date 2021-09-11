@@ -141,7 +141,7 @@ func tlstestSuite(t *testing.T, serverca *x509.CertPool, clientca *x509.CertPool
 	tlsConfig := tls.Config{
 		RootCAs:      clientca,
 		Certificates: []tls.Certificate{*clientcert},
-		ServerName:   common.ServerName,
+		ServerName:   "test",
 	}
 
 	testListener, err := router.NewListener(listener.Addr().String(), "test", &tlsConfig)
@@ -254,7 +254,7 @@ func TestCloseListener(t *testing.T) {
 }
 
 func TestE2EWithTLS(t *testing.T) {
-	ca, priv, pub, err := common.GenerateCertSuite()
+	ca, priv, pub, err := common.GenerateTestCertSuite()
 	if err != nil {
 		t.Fatalf("cannot generate test certificates")
 	}
@@ -268,7 +268,7 @@ func TestE2EWithTLS(t *testing.T) {
 }
 
 func TestE2EWithTLSAuthFailed(t *testing.T) {
-	serverCA, serverPriv, serverPub, err := common.GenerateCertSuite()
+	serverCA, serverPriv, serverPub, err := common.GenerateTestCertSuite()
 	if err != nil {
 		t.Fatalf("cannot generate test certificates")
 	}
@@ -278,7 +278,7 @@ func TestE2EWithTLSAuthFailed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("invalid certificate received")
 	}
-	clientCA, clientPriv, clientPub, err := common.GenerateCertSuite()
+	clientCA, clientPriv, clientPub, err := common.GenerateTestCertSuite()
 	if err != nil {
 		t.Fatalf("cannot generate test certificates")
 	}

@@ -114,6 +114,14 @@ func (store *KeyStore) CleanUp() {
 	store.cache = make(map[string]string)
 }
 
+// UpdateKey updates the property of the Key, will create a new entry if Key does not exist.
+func (store *KeyStore) UpdateKey(Key []byte, property SessionKey) {
+	hashkey := HashKey(Key)
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	store.Table[hashkey] = &property
+}
+
 // RegisterKey registers a key into the KeyStore. Returns error if key exists or is too short.
 func (store *KeyStore) RegisterKey(Key []byte, property SessionKey) error {
 	hashkey := HashKey(Key)

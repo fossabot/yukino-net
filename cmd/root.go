@@ -109,6 +109,51 @@ var routerCmd = &cobra.Command{
 	},
 }
 
+var certCmd = &cobra.Command{
+	Use:   "cert [command]",
+	Short: "A set of commands related to certificates",
+}
+
+var certGenCACmd = &cobra.Command{
+	Use:   "new-ca [name] [output folder]",
+	Short: "Create a new CA under output folder",
+	Args:  cobra.ExactArgs(2),
+	Run: func(cmd *cobra.Command, args []string) {
+		err := GenerateCA(args[0], args[1])
+		if err != nil {
+			log.Printf("Error: %v", err)
+			return
+		}
+	},
+}
+
+var certGenCertCmd = &cobra.Command{
+	Use:   "new-cert [name] [dns name] [ca folder] [output folder]",
+	Short: "Create a new certificate under output folder",
+	Args:  cobra.ExactArgs(4),
+	Run: func(cmd *cobra.Command, args []string) {
+		err := GenerateCertificate(args[0], args[1], args[2], args[3])
+		if err != nil {
+			log.Printf("Error: %v", err)
+			return
+		}
+	},
+}
+
+var certAddPermRule = &cobra.Command{
+	Use:   "add-permission [cert key file] [cert file] [token file]",
+	Short: "Add a new permission for the given certificate and save to the token file for router to use",
+	Long:  "Add a new permission for the x509 key pair <cert key, cert>, the function will add a new ACL rule into the token file to apply rule invoke/listen on channel.",
+	Args:  cobra.ExactArgs(3),
+	Run: func(cmd *cobra.Command, args []string) {
+		err := AddCertPermission(args[0], args[1], args[2])
+		if err != nil {
+			log.Printf("Error: %v", err)
+			return
+		}
+	},
+}
+
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatalf("failed to execute Root command: %v", err)
@@ -123,10 +168,15 @@ func init() {
 	mountCmd.AddCommand(mountLocalCmd)
 	mountCmd.AddCommand(mountRemoteCmd)
 
+	certCmd.AddCommand(certGenCACmd)
+	certCmd.AddCommand(certGenCertCmd)
+	certCmd.AddCommand(certAddPermRule)
+
 	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "config.json", "Configuration file to join the router network.")
 	rootCmd.AddCommand(socksCmd)
 	rootCmd.AddCommand(mountCmd)
 	rootCmd.AddCommand(httpFileCmd)
 	rootCmd.AddCommand(endpointCmd)
 	rootCmd.AddCommand(routerCmd)
+	rootCmd.AddCommand(certCmd)
 }
