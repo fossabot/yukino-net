@@ -25,14 +25,30 @@ var socksCmd = &cobra.Command{
 	},
 }
 
-var mountCmd = &cobra.Command{
-	Use:   "mount [channel] [local address]",
-	Short: "Mount `channel` to `local address`",
+var mountLocalCmd = &cobra.Command{
+	Use:   "local [channel] [local address]",
+	Short: "Listen on `local address`, and forward all traffic to `channel`.",
 	Long:  "mount will listen on the specified address, and forward all traffic through this address to `channel`.",
 	Args:  cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		Mount(configFile, args[0], args[1])
 	},
+}
+
+var mountRemoteCmd = &cobra.Command{
+	Use:   "remote [channel] [remote address]",
+	Short: "Create a `channel`, which will forward all traffic to `remote address`",
+	Long:  "mount will listen on the specified channel, and forward all traffic through this address to `remote address`.",
+	Args:  cobra.ExactArgs(2),
+	Run: func(cmd *cobra.Command, args []string) {
+		MountRemote(configFile, args[0], args[1])
+	},
+}
+
+var mountCmd = &cobra.Command{
+	Use:   "mount [command]",
+	Short: "Mount binds a local or remote address to a channel",
+	Long:  "mount will forward traffic between channel and real tcp network.",
 }
 
 var httpFileCmd = &cobra.Command{
@@ -103,6 +119,9 @@ func init() {
 	endpointCallCmd.Flags().DurationVarP(&rpcTimeout, "timeout", "t", 3*time.Second, "The timeout to invoke the RPC service.")
 	endpointCmd.AddCommand(endpointServerCmd)
 	endpointCmd.AddCommand(endpointCallCmd)
+
+	mountCmd.AddCommand(mountLocalCmd)
+	mountCmd.AddCommand(mountRemoteCmd)
 
 	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "config.json", "Configuration file to join the router network.")
 	rootCmd.AddCommand(socksCmd)
