@@ -37,7 +37,7 @@ func initializeEndPointClient(ctx context.Context, configFile string, channel st
 	return pb.NewEndpointClient(rpcClient), nil
 }
 
-func InvokeEndPointShellProxyService(ctx context.Context, ConfigFile, Channel, Command string, timeout time.Duration) (string, error) {
+func InvokeEndPointShellProxyService(ctx context.Context, ConfigFile, Channel, Command string, PrivateKey string, timeout time.Duration) (string, error) {
 	client, err := initializeEndPointClient(ctx, ConfigFile, Channel)
 	if err != nil {
 		return "", err
@@ -46,8 +46,8 @@ func InvokeEndPointShellProxyService(ctx context.Context, ConfigFile, Channel, C
 		Command:  Command,
 		Deadline: timestamppb.New(time.Now().Add(timeout)),
 	}
-	if len(rpcKey) > 0 {
-		priv, err := base64.RawStdEncoding.DecodeString(rpcKey)
+	if len(PrivateKey) > 0 {
+		priv, err := base64.RawStdEncoding.DecodeString(PrivateKey)
 		if err != nil {
 			return "", fmt.Errorf("error while loading public key")
 		}
@@ -60,15 +60,15 @@ func InvokeEndPointShellProxyService(ctx context.Context, ConfigFile, Channel, C
 	return resp.GetMessage(), nil
 }
 
-func StartEndPointService(ctx context.Context, ConfigFile, Channel string) error {
+func StartEndPointService(ctx context.Context, ConfigFile, Channel string, ACL []string) error {
 	listener, err := util.CreateListenerFromConfig(ConfigFile, Channel)
 	if err != nil {
 		return err
 	}
 	var server *impl.EndPointServer
-	if len(rpcPubKey) > 0 {
-		keys := make([][32]byte, len(rpcPubKey))
-		for i, key := range rpcPubKey {
+	if len(ACL) > 0 {
+		keys := make([][32]byte, len(ACL))
+		for i, key := range ACL {
 			rawKey, err := base64.RawStdEncoding.DecodeString(key)
 			if err != nil {
 				return fmt.Errorf("failed to extract public key: %v", err)
@@ -120,7 +120,7 @@ func StartEndPointWebhook(ctx context.Context, ConfigFile, LocalAddr, HashToken 
 			rw.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		InvokeEndPointShellProxyService(ctx, ConfigFile, channel, r.Header.Get("Command"), 5*time.Second)
+		InvokeEndPointShellProxyService(ctx, ConfigFile, channel, r.Header.Get("Command"), r.Header.Get("Private-Key"), 5*time.Second)
 	})
 	return http.ListenAndServe(LocalAddr, nil)
 }
