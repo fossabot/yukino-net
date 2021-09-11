@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xpy123993/router/libraries/router"
-	"github.com/xpy123993/router/libraries/router/common"
+	"github.com/xpy123993/yukino-net/libraries/common"
+	"github.com/xpy123993/yukino-net/libraries/router"
 )
 
 func acceptAndEqual(listener net.Listener, message string) error {

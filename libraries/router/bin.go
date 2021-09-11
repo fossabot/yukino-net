@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/xpy123993/router/libraries/router/proto"
+	"github.com/xpy123993/yukino-net/libraries/router/proto"
 )
 
 const MaxChannelNameLength = 256

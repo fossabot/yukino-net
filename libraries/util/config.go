@@ -7,7 +7,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/xpy123993/router/libraries/router"
+	"github.com/xpy123993/yukino-net/libraries/router"
+	"github.com/xpy123993/yukino-net/libraries/router/keystore"
 )
 
 // ClientConfig stores the configuration to connect to the Router network.
@@ -24,31 +25,60 @@ type ClientConfig struct {
 	// ServerNameOverride overrides the server name used for the client to authenticate the Router if not empty.
 	ServerNameOverride string `json:"server-name"`
 
-	// ClientCert stores the filename to the client's cert file in PEM format, used for providing an identity to the server.
-	ClientCert string `json:"cert-file"`
+	// CertFile stores the filename to the client's cert file in PEM format, used for providing an identity to the server.
+	CertFile string `json:"cert-file"`
 
-	// ClientKey stores the filename to the client's key file in PEM format.
-	ClientKey string `json:"key-file"`
+	// KeyFile stores the filename to the client's key file in PEM format.
+	KeyFile string `json:"key-file"`
+
+	// TokenFile provides the Router extra ACL control in application layer.
+	TokenFile string `json:"token-file"`
 }
 
-func createTLSConfig(config *ClientConfig) (*tls.Config, error) {
-	if !config.EnableTLS {
-		return nil, nil
-	}
+func parseCAAndCertificate(config *ClientConfig) (*x509.CertPool, *tls.Certificate, error) {
 	caPool := x509.NewCertPool()
 	if data, err := os.ReadFile(config.CaCert); err != nil {
-		return nil, err
+		return nil, nil, err
 	} else {
 		caPool.AppendCertsFromPEM(data)
 	}
-	certificate, err := tls.LoadX509KeyPair(config.ClientCert, config.ClientKey)
+	certificate, err := tls.LoadX509KeyPair(config.CertFile, config.KeyFile)
+	if err != nil {
+		return nil, nil, err
+	}
+	return caPool, &certificate, err
+}
+
+func createClientTLSConfig(config *ClientConfig) (*tls.Config, error) {
+	if !config.EnableTLS {
+		return nil, nil
+	}
+	caPool, certificate, err := parseCAAndCertificate(config)
 	if err != nil {
 		return nil, err
 	}
 	return &tls.Config{
-		Certificates: []tls.Certificate{certificate},
+		Certificates: []tls.Certificate{*certificate},
 		RootCAs:      caPool,
 		ServerName:   config.ServerNameOverride,
+	}, nil
+}
+
+// LoadRouterTLSConfig returns the tls config used by a router.
+// If `EnableTLS` is false, a nil will be returned.
+func LoadRouterTLSConfig(config *ClientConfig) (*tls.Config, error) {
+	if !config.EnableTLS {
+		return nil, nil
+	}
+	caPool, certificate, err := parseCAAndCertificate(config)
+	if err != nil {
+		return nil, err
+	}
+	return &tls.Config{
+		RootCAs:      caPool,
+		ClientCAs:    caPool,
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		Certificates: []tls.Certificate{*certificate},
 	}, nil
 }
 
@@ -65,13 +95,22 @@ func LoadClientConfig(ConfigFile string) (*ClientConfig, error) {
 	return &clientConfig, nil
 }
 
+// LoadClientTLSConfig returns only the TLSConfig part from `ConfigFile`.
+func LoadClientTLSConfig(ConfigFile string) (*tls.Config, error) {
+	rawConfig, err := LoadClientConfig(ConfigFile)
+	if err != nil {
+		return nil, err
+	}
+	return createClientTLSConfig(rawConfig)
+}
+
 // CreateListenerFromConfig creates a listener on `ListenChannel` from `ConfigFile`.
 func CreateListenerFromConfig(ConfigFile string, ListenChannel string) (*router.RouterListener, error) {
 	config, err := LoadClientConfig(ConfigFile)
 	if err != nil {
 		return nil, err
 	}
-	tlsConfig, err := createTLSConfig(config)
+	tlsConfig, err := createClientTLSConfig(config)
 	if err != nil {
 		return nil, fmt.Errorf("error while loading certificate: %v", err)
 	}
@@ -84,9 +123,28 @@ func CreateClientFromConfig(ConfigFile string) (*router.RouterClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	tlsConfig, err := createTLSConfig(config)
+	tlsConfig, err := createClientTLSConfig(config)
 	if err != nil {
 		return nil, fmt.Errorf("error while parsing token: %v", err)
 	}
 	return router.NewClient(config.RouterAddress, tlsConfig), nil
+}
+
+// CreateOrLoadKeyStore loads a KeyStore from `tokenFile`. If this file does not exist, a new config will be generated.
+func CreateOrLoadKeyStore(tokenFile string) (*keystore.KeyStore, error) {
+	if len(tokenFile) == 0 {
+		return nil, nil
+	}
+	keyStore, err := keystore.LoadKeyStore(tokenFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			keyStore := keystore.CreateKeyStore()
+			if err := keyStore.Save(tokenFile); err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
+	}
+	return keyStore, nil
 }

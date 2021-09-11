@@ -1,0 +1,26 @@
+syntax = "proto3";
+package proto;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/xpy123993/yukino-net/libraries/endpointrpc/proto";
+
+// ShellProxyRequest stores a request to run a shell command.
+message ShellProxyRequest {
+    // A shell command, e.g. `echo hello world`.
+    string command = 1;
+    // The deadline to execute the command, must be set to a future time.
+    google.protobuf.Timestamp deadline = 2;
+}
+
+// ShellProxyResponse stores a result of a shell command from the ShellProxy RPC.
+message ShellProxyResponse {
+    // The result of the shell command from stdout and stderr.
+    string message = 1;
+}
+
+// Endpoint service provides a set of admin functionalities on a specific machine.
+service Endpoint {
+    // Executes a command on target endpoint, returns all the output result.
+    rpc ShellProxy (ShellProxyRequest) returns (ShellProxyResponse) {}
+}
