@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/xpy123993/yukino-net/libraries/router"
@@ -83,8 +84,16 @@ func LoadRouterTLSConfig(config *ClientConfig) (*tls.Config, error) {
 }
 
 // LoadClientConfig loads client configuration from `ConfigFile`, returns any error encountered.
-func LoadClientConfig(ConfigFile string) (*ClientConfig, error) {
-	data, err := os.ReadFile(ConfigFile)
+func LoadClientConfig(ConfigFile []string) (*ClientConfig, error) {
+	var data []byte
+	var err error
+	for _, config := range ConfigFile {
+		data, err = os.ReadFile(config)
+		if err == nil {
+			log.Printf("Config loaded from %s", config)
+			break
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +105,7 @@ func LoadClientConfig(ConfigFile string) (*ClientConfig, error) {
 }
 
 // LoadClientTLSConfig returns only the TLSConfig part from `ConfigFile`.
-func LoadClientTLSConfig(ConfigFile string) (*tls.Config, error) {
+func LoadClientTLSConfig(ConfigFile []string) (*tls.Config, error) {
 	rawConfig, err := LoadClientConfig(ConfigFile)
 	if err != nil {
 		return nil, err
@@ -105,7 +114,7 @@ func LoadClientTLSConfig(ConfigFile string) (*tls.Config, error) {
 }
 
 // CreateListenerFromConfig creates a listener on `ListenChannel` from `ConfigFile`.
-func CreateListenerFromConfig(ConfigFile string, ListenChannel string) (*router.RouterListener, error) {
+func CreateListenerFromConfig(ConfigFile []string, ListenChannel string) (*router.RouterListener, error) {
 	config, err := LoadClientConfig(ConfigFile)
 	if err != nil {
 		return nil, err
@@ -118,7 +127,7 @@ func CreateListenerFromConfig(ConfigFile string, ListenChannel string) (*router.
 }
 
 // CreateClientFromConfig creates a client from `ConfigFile`.
-func CreateClientFromConfig(ConfigFile string) (*router.RouterClient, error) {
+func CreateClientFromConfig(ConfigFile []string) (*router.RouterClient, error) {
 	config, err := LoadClientConfig(ConfigFile)
 	if err != nil {
 		return nil, err

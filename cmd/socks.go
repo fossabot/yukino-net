@@ -7,7 +7,7 @@ import (
 	"github.com/xpy123993/yukino-net/libraries/util"
 )
 
-func StartSocks5Proxy(ConfigFile, Channel string) {
+func StartSocks5Proxy(ConfigFile []string, Channel string) {
 	listener, err := util.CreateListenerFromConfig(ConfigFile, Channel)
 	if err != nil {
 		log.Fatalf("error while listening on proxy channel: %v", err)

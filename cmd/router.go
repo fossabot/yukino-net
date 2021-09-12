@@ -38,7 +38,7 @@ func (auth *tokenAuthority) GetExpirationTime(key []byte) time.Time {
 	return auth.keyStore.GetExpireTime(key)
 }
 
-func StartRouter(ConfigFile string) error {
+func StartRouter(ConfigFile []string) error {
 	rand.Seed(time.Now().UnixMicro())
 	config, err := util.LoadClientConfig(ConfigFile)
 	if err != nil {

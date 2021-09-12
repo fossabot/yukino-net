@@ -19,7 +19,7 @@ func Execute() {
 }
 
 func init() {
-	var configFile string
+	var configFile []string
 	var rpcTimeout time.Duration
 	var rpcKey string
 	var rpcPubKey []string
@@ -207,7 +207,7 @@ func init() {
 	certCmd.AddCommand(certGenCertCmd)
 	certCmd.AddCommand(certAddPermRule)
 
-	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "config.json", "Configuration file to join the router network.")
+	rootCmd.PersistentFlags().StringArrayVarP(&configFile, "config", "c", []string{"./config.json", "/etc/yukino-net/config.json", "$HOME/.yukino-net"}, "Configuration file to join the router network.")
 	rootCmd.AddCommand(socksCmd)
 	rootCmd.AddCommand(mountCmd)
 	rootCmd.AddCommand(httpFileCmd)

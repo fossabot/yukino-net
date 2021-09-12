@@ -33,7 +33,7 @@ func handleBridge(routerClient *router.RouterClient, channel string, client net.
 	bridge(conn, client)
 }
 
-func Mount(ConfigFile, Channel, LocalAddr string) error {
+func Mount(ConfigFile []string, Channel, LocalAddr string) error {
 	listener, err := net.Listen("tcp", LocalAddr)
 	if err != nil {
 		return err
@@ -52,7 +52,7 @@ func Mount(ConfigFile, Channel, LocalAddr string) error {
 	}
 }
 
-func MountRemote(ConfigFile, Channel, RemoteAddr string) error {
+func MountRemote(ConfigFile []string, Channel, RemoteAddr string) error {
 	listener, err := util.CreateListenerFromConfig(ConfigFile, Channel)
 	if err != nil {
 		return err

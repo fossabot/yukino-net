@@ -22,7 +22,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func initializeEndPointClient(ctx context.Context, configFile string, channel string) (pb.EndpointClient, error) {
+func initializeEndPointClient(ctx context.Context, configFile []string, channel string) (pb.EndpointClient, error) {
 	routerClient, err := util.CreateClientFromConfig(configFile)
 	if err != nil {
 		return nil, err
@@ -37,7 +37,7 @@ func initializeEndPointClient(ctx context.Context, configFile string, channel st
 	return pb.NewEndpointClient(rpcClient), nil
 }
 
-func InvokeEndPointShellProxyService(ctx context.Context, ConfigFile, Channel, Command string, PrivateKey string, timeout time.Duration) (string, error) {
+func InvokeEndPointShellProxyService(ctx context.Context, ConfigFile []string, Channel, Command string, PrivateKey string, timeout time.Duration) (string, error) {
 	client, err := initializeEndPointClient(ctx, ConfigFile, Channel)
 	if err != nil {
 		return "", err
@@ -60,7 +60,7 @@ func InvokeEndPointShellProxyService(ctx context.Context, ConfigFile, Channel, C
 	return resp.GetMessage(), nil
 }
 
-func StartEndPointService(ctx context.Context, ConfigFile, Channel string, ACL []string) error {
+func StartEndPointService(ctx context.Context, ConfigFile []string, Channel string, ACL []string) error {
 	listener, err := util.CreateListenerFromConfig(ConfigFile, Channel)
 	if err != nil {
 		return err
@@ -102,7 +102,7 @@ func GenerateEd25519() {
 	fmt.Printf("Public Key: %s\nPrivate Key: %s\n", base64.RawURLEncoding.EncodeToString(pub), base64.RawURLEncoding.EncodeToString(priv))
 }
 
-func StartEndPointWebhook(ctx context.Context, ConfigFile, LocalAddr, HashToken string) error {
+func StartEndPointWebhook(ctx context.Context, ConfigFile []string, LocalAddr, HashToken string) error {
 	limiter := rate.NewLimiter(3, 10)
 	http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
 		if !limiter.Allow() {
