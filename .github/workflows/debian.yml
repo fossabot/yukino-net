@@ -6,10 +6,6 @@ on:
   push:
     tags:
       - "v*.*.*"
-  push:
-    branches: [ master ]
-  pull_request:
-    branches: [ master ]
 
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
@@ -69,13 +65,13 @@ jobs:
         run: curl -L https://raw.githubusercontent.com/mh-cbon/latest/master/install.sh | GH=mh-cbon/go-bin-deb sh -xe
 
       - name: Prepare UPX
-        run: apt update && apt install upx -y
+        run: sudo apt update && sudo apt install upx -y
 
       # Runs a set of commands using the runners shell
       - name: Create Releases
         run: |
           cd release-conf
-          ./release.sh 0.0.1
+          ./release.sh ${GITHUB_REF##*/v}
       - name: GitHub Releases
         uses: softprops/action-gh-release@v1
         with:
