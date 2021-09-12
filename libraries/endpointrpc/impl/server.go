@@ -45,7 +45,7 @@ func (server *EndPointServer) ShellProxy(ctx context.Context, request *pb.ShellP
 	commandCtx, cancelFn := context.WithDeadline(ctx, request.GetDeadline().AsTime())
 	defer cancelFn()
 	log.Printf("executing command: %s", request.GetCommand())
-	cmd := exec.CommandContext(commandCtx, commandSeq[0], commandSeq[1:]...)
+	cmd := exec.CommandContext(commandCtx, "/usr/share/yukino-net/controller.sh", commandSeq...)
 	result, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, status.Errorf(codes.Aborted, "error while executing the command: %v", err)
