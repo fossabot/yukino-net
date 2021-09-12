@@ -1,0 +1,32 @@
+{
+    "name": "yukino-net",
+    "maintainer": "Yukino <yukino@yukino.app>",
+    "files": [
+      {
+        "from": "build/!arch!/*",
+        "to": "/usr/bin",
+        "base": "build/!arch!",
+        "fperm": "0755"
+      },
+      {
+        "from": "assets/**",
+        "to": "/usr/share/yukino-net",
+        "base": "assets"
+      }
+    ],
+    "copyrights": [
+      {
+        "files": "*",
+        "copyright": "2021 Yukino <yukino@yukino.app>",
+        "license": "Apache 2.0",
+        "file": "LICENSE"
+      }
+    ],
+    "depends": [
+      "libnotify-bin",
+      "libc6"
+    ],
+    "description": "Yukino Net - Lightweight Network",
+    "changelog-file": "changelog"
+  }
+  
