@@ -1,6 +1,6 @@
 #!/bin/bash
 
-BASE_FOLDER=/usr/share/yukino-message-client
+BASE_FOLDER=/usr/share/yukino-net
 notify() {
 	XUSERS=$(who|grep -E "\(:[0-9](\.[0-9])*\)"|awk '{print $1$NF}'|sort -u)
 	for XUSER in "${XUSERS[@]}"; do

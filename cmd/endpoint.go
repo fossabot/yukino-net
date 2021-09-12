@@ -47,7 +47,7 @@ func InvokeEndPointShellProxyService(ctx context.Context, ConfigFile, Channel, C
 		Deadline: timestamppb.New(time.Now().Add(timeout)),
 	}
 	if len(PrivateKey) > 0 {
-		priv, err := base64.RawStdEncoding.DecodeString(PrivateKey)
+		priv, err := base64.RawURLEncoding.DecodeString(PrivateKey)
 		if err != nil {
 			return "", fmt.Errorf("error while loading public key")
 		}
@@ -69,7 +69,7 @@ func StartEndPointService(ctx context.Context, ConfigFile, Channel string, ACL [
 	if len(ACL) > 0 {
 		keys := make([][32]byte, len(ACL))
 		for i, key := range ACL {
-			rawKey, err := base64.RawStdEncoding.DecodeString(key)
+			rawKey, err := base64.RawURLEncoding.DecodeString(key)
 			if err != nil {
 				return fmt.Errorf("failed to extract public key: %v", err)
 			}
@@ -99,7 +99,7 @@ func GenerateEd25519() {
 	if err != nil {
 		log.Fatalf("failed to generate key: %v", err)
 	}
-	fmt.Printf("Public Key: %s\nPrivate Key: %s\n", base64.RawStdEncoding.EncodeToString(pub), base64.RawStdEncoding.EncodeToString(priv))
+	fmt.Printf("Public Key: %s\nPrivate Key: %s\n", base64.RawURLEncoding.EncodeToString(pub), base64.RawURLEncoding.EncodeToString(priv))
 }
 
 func StartEndPointWebhook(ctx context.Context, ConfigFile, LocalAddr, HashToken string) error {
@@ -120,8 +120,13 @@ func StartEndPointWebhook(ctx context.Context, ConfigFile, LocalAddr, HashToken 
 			rw.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		InvokeEndPointShellProxyService(ctx, ConfigFile, channel, r.Header.Get("Command"), r.Header.Get("Private-Key"), 5*time.Second)
+		log.Printf("Forwarding command `%s` to channel `%s`.", r.Header.Get("Command"), channel)
+		_, err := InvokeEndPointShellProxyService(ctx, ConfigFile, channel, r.Header.Get("Command"), r.Header.Get("Private-Key"), 5*time.Second)
+		if err != nil {
+			log.Printf("EndPoint service returns error: %v", err)
+		}
 	})
+	log.Printf("Serving webhook at http://%s/", LocalAddr)
 	return http.ListenAndServe(LocalAddr, nil)
 }
 
