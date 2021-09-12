@@ -3,4 +3,4 @@ x509/*
 token.json
 config.json
 release-conf/releases/*
-!release-conf/releases/config.example.conf
+!release-conf/releases/config.example.json
