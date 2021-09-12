@@ -60,7 +60,7 @@ func InvokeEndPointShellProxyService(ctx context.Context, ConfigFile []string, C
 	return resp.GetMessage(), nil
 }
 
-func StartEndPointService(ctx context.Context, ConfigFile []string, Channel string, ACL []string) error {
+func StartEndPointService(ctx context.Context, ConfigFile []string, Channel string, ACL []string, BaseCommand string) error {
 	listener, err := util.CreateListenerFromConfig(ConfigFile, Channel)
 	if err != nil {
 		return err
@@ -79,6 +79,7 @@ func StartEndPointService(ctx context.Context, ConfigFile []string, Channel stri
 	} else {
 		server = impl.NewServer()
 	}
+	server.BaseCommand = BaseCommand
 	rpcServer := grpc.NewServer()
 	pb.RegisterEndpointServer(rpcServer, server)
 

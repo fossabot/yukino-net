@@ -16,6 +16,8 @@ type EndPointServer struct {
 	pb.UnimplementedEndpointServer
 
 	ACL map[[32]byte]bool
+	// BaseCommand will be the first parameter to call when not empty.
+	BaseCommand string
 }
 
 func NewServer() *EndPointServer {
@@ -45,7 +47,13 @@ func (server *EndPointServer) ShellProxy(ctx context.Context, request *pb.ShellP
 	commandCtx, cancelFn := context.WithDeadline(ctx, request.GetDeadline().AsTime())
 	defer cancelFn()
 	log.Printf("executing command: %s", request.GetCommand())
-	cmd := exec.CommandContext(commandCtx, "/usr/share/yukino-net/controller.sh", commandSeq...)
+	var cmd *exec.Cmd
+	if len(server.BaseCommand) > 0 {
+		cmd = exec.CommandContext(commandCtx, server.BaseCommand, commandSeq...)
+	} else {
+		cmd = exec.CommandContext(commandCtx, commandSeq[0], commandSeq[1:]...)
+	}
+
 	result, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, status.Errorf(codes.Aborted, "error while executing the command: %v", err)

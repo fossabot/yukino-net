@@ -23,6 +23,7 @@ func init() {
 	var rpcTimeout time.Duration
 	var rpcKey string
 	var rpcPubKey []string
+	var baseCommand string
 
 	var socksCmd = &cobra.Command{
 		Use:   "socks5 [channel]",
@@ -80,7 +81,7 @@ func init() {
 		Short: "Create an EndPoint RPC service on `channel`",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			err := StartEndPointService(cmd.Context(), configFile, args[0], rpcPubKey)
+			err := StartEndPointService(cmd.Context(), configFile, args[0], rpcPubKey, baseCommand)
 			if err != nil {
 				log.Printf("Service returns status: %v", err)
 			}
@@ -194,6 +195,7 @@ func init() {
 	endpointCallCmd.Flags().DurationVarP(&rpcTimeout, "timeout", "t", 3*time.Second, "The timeout to invoke the RPC service.")
 	endpointCallCmd.Flags().StringVarP(&rpcKey, "master-key", "m", "", "If not empty, a signature will be created for server side authentication.")
 	endpointServerCmd.Flags().StringArrayVarP(&rpcPubKey, "master-key", "m", []string{}, "If not empty, the server will only accept ACL from signed by those keys.")
+	endpointServerCmd.Flags().StringVarP(&baseCommand, "base", "b", "", "If not empty, server will run [base command] <other commands...>")
 	endpointCmd.AddCommand(endpointServerCmd)
 	endpointCmd.AddCommand(endpointCallCmd)
 	endpointCmd.AddCommand(endpointWebhookCmd)
