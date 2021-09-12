@@ -31,6 +31,7 @@ func createCertificateSpec(isCA bool, DNSName string, CommonName string) *x509.C
 		KeyUsage:           x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		NotAfter:           time.Now().AddDate(10, 0, 0),
 		SignatureAlgorithm: x509.SHA512WithRSA,
+		MaxPathLenZero:     true,
 	}
 	if isCA {
 		certificate.IsCA = true
