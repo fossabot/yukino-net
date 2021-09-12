@@ -6,6 +6,11 @@ on:
   push:
     tags:
       - "v*.*.*"
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
@@ -70,7 +75,7 @@ jobs:
       - name: Create Releases
         run: |
           cd release-conf
-          ./release.sh ${GITHUB_REF##*/v}
+          ./release.sh 0.0.1
       - name: GitHub Releases
         uses: softprops/action-gh-release@v1
         with:

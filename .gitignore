@@ -2,6 +2,5 @@ x509/*
 !x509/generate.sh
 token.json
 config.json
-**/*.pb.go
 release-conf/releases/*
 !release-conf/releases/config.example.conf
