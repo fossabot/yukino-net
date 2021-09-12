@@ -11,7 +11,8 @@
       {
         "from": "assets/**",
         "to": "/usr/share/yukino-net",
-        "base": "assets"
+        "base": "assets",
+        "fperm": "0755"
       }
     ],
     "copyrights": [
