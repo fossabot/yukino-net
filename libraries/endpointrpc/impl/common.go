@@ -9,7 +9,7 @@ import (
 )
 
 func dataField(request *pb.ShellProxyRequest) []byte {
-	return []byte(fmt.Sprintf("[%s] %s", request.Deadline.String(), request.Command))
+	return []byte(fmt.Sprintf("[%d] %s", request.Deadline.AsTime().UnixMicro(), request.Command))
 }
 
 // Verify if the signature is valid.
