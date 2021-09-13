@@ -12,6 +12,7 @@ var rootCmd = &cobra.Command{
 	Short: "yukino-net is a CLI to interative with microservices on Yukino network.",
 }
 
+// Execute is the cmd entry.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatalf("failed to execute Root command: %v", err)
@@ -131,7 +132,7 @@ func init() {
 		Short: "Create a Yukino network described in the config file.",
 		Long:  "Route command will create a new Network that all other services can rely on.",
 		Run: func(cmd *cobra.Command, args []string) {
-			err := StartRouter(configFile)
+			err := cmdStartRoute(configFile)
 			if err != nil {
 				log.Printf("Error: %v", err)
 				return

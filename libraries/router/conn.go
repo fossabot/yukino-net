@@ -35,10 +35,7 @@ func (conn *routerConnection) writeFrame(frame *Frame) error {
 	if conn.isclosed {
 		return fmt.Errorf("connection is already closed")
 	}
-	if err := writeFrame(frame, conn.Connection); err != nil {
-		return err
-	}
-	return nil
+	return writeFrame(frame, conn.Connection)
 }
 
 func newConn(conn net.Conn) *routerConnection {

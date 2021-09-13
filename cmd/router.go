@@ -38,7 +38,7 @@ func (auth *tokenAuthority) GetExpirationTime(key []byte) time.Time {
 	return auth.keyStore.GetExpireTime(key)
 }
 
-func StartRouter(ConfigFile []string) error {
+func cmdStartRoute(ConfigFile []string) error {
 	rand.Seed(time.Now().UnixMicro())
 	config, err := util.LoadClientConfig(ConfigFile)
 	if err != nil {
@@ -55,7 +55,7 @@ func StartRouter(ConfigFile []string) error {
 		return fmt.Errorf("failed to load certificate: %v", err)
 	}
 
-	serviceRouter := router.NewRouter(router.RouterOption{
+	serviceRouter := router.NewRouter(router.Option{
 		TokenAuthority:            &tokenAuthority{keyStore: keyStore},
 		DialConnectionTimeout:     3 * time.Second,
 		ListenConnectionKeepAlive: 30 * time.Second,

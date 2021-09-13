@@ -40,8 +40,8 @@ func (*noPermissionCheckAuthority) GetExpirationTime([]byte) time.Time {
 	return time.Now().Add(24 * time.Hour)
 }
 
-// RouterOption specifies a set of options being used by the router.
-type RouterOption struct {
+// Option specifies a set of options being used by the router.
+type Option struct {
 	// TokenAuthority is the authority used for checking permissions.
 	TokenAuthority Authority
 	// DialConnectionTimeout specifies the timeout when a dialer connects to a listener.
@@ -54,7 +54,8 @@ type RouterOption struct {
 	ChannelBufferBytes uint64
 }
 
-var DefaultRouterOption = RouterOption{
+// DefaultRouterOption is a set of parameters in default value.
+var DefaultRouterOption = Option{
 	TokenAuthority:            &noPermissionCheckAuthority{},
 	DialConnectionTimeout:     DefaultDialConnectionTimeout,
 	ListenConnectionKeepAlive: DefaultListenConnectionKeepAlive,
@@ -63,7 +64,7 @@ var DefaultRouterOption = RouterOption{
 
 // Router proxies requests.
 type Router struct {
-	option           RouterOption
+	option           Option
 	mu               sync.RWMutex
 	receiverTable    map[string]*routerConnection // control channel to the receiver.
 	inflightTable    map[uint64]*routerConnection
@@ -71,7 +72,7 @@ type Router struct {
 }
 
 // NewRouter creates a Router structure.
-func NewRouter(option RouterOption) *Router {
+func NewRouter(option Option) *Router {
 	return &Router{
 		mu:            sync.RWMutex{},
 		receiverTable: make(map[string]*routerConnection),

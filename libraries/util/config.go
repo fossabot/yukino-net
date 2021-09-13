@@ -38,11 +38,14 @@ type ClientConfig struct {
 
 func parseCAAndCertificate(config *ClientConfig) (*x509.CertPool, *tls.Certificate, error) {
 	caPool := x509.NewCertPool()
-	if data, err := os.ReadFile(config.CaCert); err != nil {
+	data, err := os.ReadFile(config.CaCert)
+	if err != nil {
 		return nil, nil, err
-	} else {
-		caPool.AppendCertsFromPEM(data)
 	}
+	if !caPool.AppendCertsFromPEM(data) {
+		return nil, nil, fmt.Errorf("cannot insert %s into cert pool", config.CaCert)
+	}
+
 	certificate, err := tls.LoadX509KeyPair(config.CertFile, config.KeyFile)
 	if err != nil {
 		return nil, nil, err
