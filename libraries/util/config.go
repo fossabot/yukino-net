@@ -107,39 +107,35 @@ func LoadClientConfig(ConfigFile []string) (*ClientConfig, error) {
 	return &clientConfig, nil
 }
 
-// LoadClientTLSConfig returns only the TLSConfig part from `ConfigFile`.
-func LoadClientTLSConfig(ConfigFile []string) (*tls.Config, error) {
+// LoadClientTLSConfig returns only the RouterAddress and TLSConfig part from `ConfigFile`.
+func LoadClientTLSConfig(ConfigFile []string) (string, *tls.Config, error) {
 	rawConfig, err := LoadClientConfig(ConfigFile)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
-	return createClientTLSConfig(rawConfig)
+	tlsConfig, err := createClientTLSConfig(rawConfig)
+	if err != nil {
+		return "", nil, err
+	}
+	return rawConfig.RouterAddress, tlsConfig, nil
 }
 
 // CreateListenerFromConfig creates a listener on `ListenChannel` from `ConfigFile`.
 func CreateListenerFromConfig(ConfigFile []string, ListenChannel string) (*router.Listener, error) {
-	config, err := LoadClientConfig(ConfigFile)
-	if err != nil {
-		return nil, err
-	}
-	tlsConfig, err := createClientTLSConfig(config)
+	address, tlsConfig, err := LoadClientTLSConfig(ConfigFile)
 	if err != nil {
 		return nil, fmt.Errorf("error while loading certificate: %v", err)
 	}
-	return router.NewListener(config.RouterAddress, ListenChannel, tlsConfig)
+	return router.NewListener(address, ListenChannel, tlsConfig)
 }
 
 // CreateClientFromConfig creates a client from `ConfigFile`.
 func CreateClientFromConfig(ConfigFile []string) (*router.Client, error) {
-	config, err := LoadClientConfig(ConfigFile)
+	address, tlsConfig, err := LoadClientTLSConfig(ConfigFile)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error while loading certificate: %v", err)
 	}
-	tlsConfig, err := createClientTLSConfig(config)
-	if err != nil {
-		return nil, fmt.Errorf("error while parsing token: %v", err)
-	}
-	return router.NewClient(config.RouterAddress, tlsConfig), nil
+	return router.NewClient(address, tlsConfig), nil
 }
 
 // CreateOrLoadKeyStore loads a KeyStore from `tokenFile`. If this file does not exist, a new config will be generated.
