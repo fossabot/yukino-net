@@ -12,79 +12,79 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xpy123993/yukino-net/libraries/endpointrpc/impl"
-	pb "github.com/xpy123993/yukino-net/libraries/endpointrpc/proto"
+	"github.com/xpy123993/yukino-net/libraries/task"
 	"github.com/xpy123993/yukino-net/libraries/util"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/ed25519"
 	"golang.org/x/time/rate"
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func initializeEndPointClient(ctx context.Context, configFile []string, channel string) (pb.EndpointClient, error) {
-	routerClient, err := util.CreateClientFromConfig(configFile)
-	if err != nil {
-		return nil, err
-	}
-
-	rpcClient, err := grpc.DialContext(ctx, channel, grpc.WithContextDialer(func(c context.Context, s string) (net.Conn, error) {
-		return routerClient.Dial(s)
-	}), grpc.WithInsecure())
-	if err != nil {
-		return nil, err
-	}
-	return pb.NewEndpointClient(rpcClient), nil
-}
-
 func InvokeEndPointShellProxyService(ctx context.Context, ConfigFile []string, Channel, Command string, PrivateKey string, timeout time.Duration) (string, error) {
-	client, err := initializeEndPointClient(ctx, ConfigFile, Channel)
-	if err != nil {
-		return "", err
-	}
-	request := pb.ShellProxyRequest{
-		Command:  Command,
-		Deadline: timestamppb.New(time.Now().Add(timeout)),
+	request := task.Request{
+		Command: task.Command{
+			TaskName: Command,
+			Deadline: time.Now().Add(timeout),
+		},
 	}
 	if len(PrivateKey) > 0 {
+		if base64.RawURLEncoding.DecodedLen(len(PrivateKey)) != 64 {
+			return "", fmt.Errorf("[local] invalid private key: should be of 64 bytes, got %d bytes", base64.RawURLEncoding.DecodedLen(len(PrivateKey)))
+		}
 		priv, err := base64.RawURLEncoding.DecodeString(PrivateKey)
 		if err != nil {
-			return "", fmt.Errorf("error while loading public key")
+			return "", fmt.Errorf("[local] cannot parse private key: %v", err)
 		}
-		impl.Sign(priv, &request)
+		if err := request.Sign(priv); err != nil {
+			return "", fmt.Errorf("[local] failed to sign request: %v", err)
+		}
 	}
-	resp, err := client.ShellProxy(ctx, &request)
+	client, err := util.CreateClientFromConfig(ConfigFile)
 	if err != nil {
 		return "", err
 	}
-	return resp.GetMessage(), nil
+	conn, err := client.Dial(Channel)
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+	if err := request.Encode(conn); err != nil {
+		return "", fmt.Errorf("[local] failed to send the request: %v", err)
+	}
+	response := task.Response{}
+	if err := response.Decode(conn); err != nil {
+		return "", fmt.Errorf("[local] failed to parse request: %v", err)
+	}
+	if response.IsError {
+		return "", fmt.Errorf("[remote] %v", response.Error())
+	}
+	return string(response.Data), nil
 }
 
 func StartEndPointService(ctx context.Context, ConfigFile []string, Channel string, ACL []string, BaseCommand string) error {
 	listener, err := util.CreateListenerFromConfig(ConfigFile, Channel)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to listen on channel: %v", err)
 	}
-	var server *impl.EndPointServer
-	if len(ACL) > 0 {
-		keys := make([][32]byte, len(ACL))
-		for i, key := range ACL {
-			rawKey, err := base64.RawURLEncoding.DecodeString(key)
-			if err != nil {
-				return fmt.Errorf("failed to extract public key: %v", err)
-			}
-			copy(keys[i][:], rawKey)
+	serverContext := task.CreateServerContext(ACL, 4, task.CreateShellCommandInterpreter(BaseCommand))
+	for ctx.Err() == nil {
+		conn, err := listener.Accept()
+		if err != nil {
+			return err
 		}
-		server = impl.NewServerWithACL(keys)
-	} else {
-		server = impl.NewServer()
+		go func(client net.Conn) {
+			defer conn.Close()
+			request := &task.Request{}
+			if err := request.Decode(client); err != nil {
+				log.Printf("received invalid reuqest: %v", err)
+				return
+			}
+			response := task.FullFillRequest(&serverContext, request)
+			if err := response.Encode(client); err != nil {
+				log.Printf("failed to respond to client: %v", err)
+			}
+		}(conn)
 	}
-	server.BaseCommand = BaseCommand
-	rpcServer := grpc.NewServer()
-	pb.RegisterEndpointServer(rpcServer, server)
-
-	log.Printf("Starting EndPoint service on channel `%s`", Channel)
-	return rpcServer.Serve(listener)
+	return ctx.Err()
 }
 
 func GetHashToken(Token string) string {
