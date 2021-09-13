@@ -64,8 +64,8 @@ jobs:
       - name: Prepare go-bin-deb
         run: curl -L https://raw.githubusercontent.com/mh-cbon/latest/master/install.sh | GH=mh-cbon/go-bin-deb sh -xe
 
-      - name: Prepare UPX
-        run: sudo apt update && sudo apt install upx -y
+      - name: Prepare ZIP
+        run: sudo apt update && sudo apt install zip -y
 
       # Runs a set of commands using the runners shell
       - name: Create Releases
