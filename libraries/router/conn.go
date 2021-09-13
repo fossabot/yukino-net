@@ -29,7 +29,7 @@ func (conn *routerConnection) close() {
 	conn.isclosed = true
 }
 
-func (conn *routerConnection) writeFrame(frame *RouterFrame) error {
+func (conn *routerConnection) writeFrame(frame *Frame) error {
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
 	if conn.isclosed {

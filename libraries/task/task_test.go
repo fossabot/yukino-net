@@ -27,8 +27,8 @@ func fakeCallback(ctx context.Context, command task.Command) ([]byte, error) {
 func generateARequestOrFail(t *testing.T, deadline *time.Time) (task.Request, []byte) {
 	request := task.Request{
 		Command: task.Command{
-			TaskName: "fake task",
-			TaskID:   "fake_id",
+			Command: "fake task",
+			TaskID:  "fake_id",
 		},
 	}
 	if deadline != nil {
@@ -128,7 +128,7 @@ func TestVerifyCanFailWithModifiedContent(t *testing.T) {
 	if err := request.Sign(privkey); err != nil {
 		t.Error(err)
 	}
-	request.Command.TaskName = "changed"
+	request.Command.Command = "changed"
 	if err := request.CheckPermission(map[string]bool{base64.RawURLEncoding.EncodeToString(pubkey): true}); err == nil {
 		t.Error("expect an error here")
 	} else if !strings.Contains(err.Error(), "verification failed") {
@@ -208,7 +208,7 @@ func TestVerifyFailOnPubkeyNotAllowed(t *testing.T) {
 
 func TestTaskFailedOnDeadlineExceeded(t *testing.T) {
 	command := task.Command{
-		TaskName: "sleep 1",
+		Command:  "sleep 1",
 		Deadline: time.Now().Add(50 * time.Millisecond),
 	}
 	ctx := task.CreateServerContext([]string{}, 1, task.CreateShellCommandInterpreter(""))
@@ -220,7 +220,7 @@ func TestTaskFailedOnDeadlineExceeded(t *testing.T) {
 
 func TestTaskSucceedWithoutDeadline(t *testing.T) {
 	command := task.Command{
-		TaskName: "some random string",
+		Command: "some random string",
 	}
 	ctx := task.CreateServerContext([]string{}, 1, task.CreateShellCommandInterpreter("echo"))
 	response, err := ctx.Execute(&command)
@@ -231,7 +231,7 @@ func TestTaskSucceedWithoutDeadline(t *testing.T) {
 
 func TestTaskSucceedWithDeadline(t *testing.T) {
 	command := task.Command{
-		TaskName: "some random string",
+		Command:  "some random string",
 		Deadline: time.Now().Add(5 * time.Second),
 	}
 	ctx := task.CreateServerContext([]string{}, 1, task.CreateShellCommandInterpreter("echo"))
@@ -245,7 +245,7 @@ func TestProcessTaskRequestReturnsValidationError(t *testing.T) {
 	ctx := task.CreateServerContext([]string{"random_token"}, 1, nil)
 	request := task.Request{
 		Command: task.Command{
-			TaskName: "some task",
+			Command:  "some task",
 			Deadline: time.Now().Add(time.Minute),
 		},
 		SenderPubKey: "some key",
@@ -260,7 +260,7 @@ func TestProcessTaskRequestSuceedWithDeadline(t *testing.T) {
 	ctx := task.CreateServerContext([]string{base64.RawURLEncoding.EncodeToString(pubkey)}, 1, task.CreateShellCommandInterpreter("echo"))
 	request := task.Request{
 		Command: task.Command{
-			TaskName: "hello world",
+			Command:  "hello world",
 			TaskID:   "task_id",
 			Deadline: time.Now().Add(time.Minute),
 		},
@@ -282,7 +282,7 @@ func TestProcessTaskASyncRequestSuceedWithDeadline(t *testing.T) {
 	ctx := task.CreateServerContext([]string{base64.RawURLEncoding.EncodeToString(pubkey)}, 1, task.CreateShellCommandInterpreter("echo"))
 	request := task.Request{
 		Command: task.Command{
-			TaskName: "hello world",
+			Command:  "hello world",
 			Deadline: time.Now().Add(time.Minute),
 		},
 	}
@@ -312,7 +312,7 @@ func BenchmarkProcessTaskWithAuthentication(b *testing.B) {
 		acl[i] = base64.RawURLEncoding.EncodeToString(pub)
 		requests[i] = task.Request{
 			Command: task.Command{
-				TaskName: "echo",
+				Command:  "echo",
 				Deadline: time.Now().Add(time.Minute),
 			},
 		}
@@ -335,7 +335,7 @@ func BenchmarkProcessTaskWithoutAuthentication(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		requests[i] = task.Request{
 			Command: task.Command{
-				TaskName: "echo",
+				Command:  "echo",
 				Deadline: time.Now().Add(time.Minute),
 			},
 		}
@@ -360,7 +360,7 @@ func BenchmarkProcessTaskASyncWithAuthentication(b *testing.B) {
 		acl[i] = base64.RawURLEncoding.EncodeToString(pub)
 		requests[i] = task.Request{
 			Command: task.Command{
-				TaskName: "echo",
+				Command:  "echo",
 				Deadline: time.Now().Add(time.Minute),
 			},
 		}
@@ -388,7 +388,7 @@ func BenchmarkProcessTaskASyncWithoutAuthentication(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		requests[i] = task.Request{
 			Command: task.Command{
-				TaskName: "echo",
+				Command:  "echo",
 				Deadline: time.Now().Add(time.Minute),
 			},
 		}

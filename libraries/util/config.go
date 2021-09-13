@@ -114,7 +114,7 @@ func LoadClientTLSConfig(ConfigFile []string) (*tls.Config, error) {
 }
 
 // CreateListenerFromConfig creates a listener on `ListenChannel` from `ConfigFile`.
-func CreateListenerFromConfig(ConfigFile []string, ListenChannel string) (*router.RouterListener, error) {
+func CreateListenerFromConfig(ConfigFile []string, ListenChannel string) (*router.Listener, error) {
 	config, err := LoadClientConfig(ConfigFile)
 	if err != nil {
 		return nil, err
@@ -127,7 +127,7 @@ func CreateListenerFromConfig(ConfigFile []string, ListenChannel string) (*route
 }
 
 // CreateClientFromConfig creates a client from `ConfigFile`.
-func CreateClientFromConfig(ConfigFile []string) (*router.RouterClient, error) {
+func CreateClientFromConfig(ConfigFile []string) (*router.Client, error) {
 	config, err := LoadClientConfig(ConfigFile)
 	if err != nil {
 		return nil, err

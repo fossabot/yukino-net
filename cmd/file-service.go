@@ -24,7 +24,7 @@ func noCacheHandler(h http.Handler, etagHeaders []string, noCacheHeaders map[str
 	return http.HandlerFunc(fn)
 }
 
-func StartHTTPFileService(ConfigFile []string, Channel, Directory string) error {
+func cmdStartHTTPFileService(ConfigFile []string, Channel, Directory string) error {
 	listener, err := util.CreateListenerFromConfig(ConfigFile, Channel)
 	if err != nil {
 		return err

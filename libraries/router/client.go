@@ -11,8 +11,8 @@ import (
 	"github.com/xpy123993/yukino-net/libraries/router/proto"
 )
 
-// RouterClient implements a Dial method to join the Router network.
-type RouterClient struct {
+// Client implements a Dial method to join the Router network.
+type Client struct {
 	// The public address of the Router.
 	routerAddress string
 	// If not nil, the client will use tls.Dial to connect to the Router.
@@ -20,22 +20,22 @@ type RouterClient struct {
 }
 
 // NewClientWithoutAuth creates a RouterClient structure.
-func NewClientWithoutAuth(RouterAddress string) *RouterClient {
-	return &RouterClient{
+func NewClientWithoutAuth(RouterAddress string) *Client {
+	return &Client{
 		routerAddress: RouterAddress,
 	}
 }
 
 // NewClient creates a RouterClient with permision settings.
-func NewClient(RouterAddress string, TLSConfig *tls.Config) *RouterClient {
-	return &RouterClient{
+func NewClient(RouterAddress string, TLSConfig *tls.Config) *Client {
+	return &Client{
 		routerAddress: RouterAddress,
 		tlsConfig:     TLSConfig,
 	}
 }
 
 // Dial initiaites a dial request into the Route network.
-func (client *RouterClient) Dial(TargetChannel string) (net.Conn, error) {
+func (client *Client) Dial(TargetChannel string) (net.Conn, error) {
 	var conn net.Conn
 	var err error
 
@@ -47,21 +47,21 @@ func (client *RouterClient) Dial(TargetChannel string) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := writeFrame(&RouterFrame{
+	if err := writeFrame(&Frame{
 		Type:    proto.Dial,
 		Channel: TargetChannel,
 	}, conn); err != nil {
 		return nil, err
 	}
-	frame := RouterFrame{}
+	frame := Frame{}
 	if err := readFrame(&frame, conn); err != nil {
 		return nil, err
 	}
 	return conn, nil
 }
 
-// RouterListener implements a net.Listener interface on Router network.
-type RouterListener struct {
+// Listener implements a net.Listener interface on Router network.
+type Listener struct {
 	routerAddress string
 	channel       string
 	controlConn   net.Conn
@@ -71,26 +71,26 @@ type RouterListener struct {
 	isClosed bool
 }
 
-// RouterAddress represents an address in Router network.
-type RouterAddress struct {
+// Address represents an address in Router network.
+type Address struct {
 	Channel string
 }
 
 // Network returns the network type.
-func (*RouterAddress) Network() string {
+func (*Address) Network() string {
 	return "Yukino"
 }
 
 // String return the channel name of this address.
-func (address *RouterAddress) String() string {
+func (address *Address) String() string {
 	return address.Channel
 }
 
 // NewRouterListenerWithConn creates a RouterListener structure.
 // Conn here can be a just initialized connectiono from TLS.
 func NewRouterListenerWithConn(
-	RouterAddress string, Channel string, TLSConfig *tls.Config) (*RouterListener, error) {
-	routerListener := RouterListener{
+	RouterAddress string, Channel string, TLSConfig *tls.Config) (*Listener, error) {
+	routerListener := Listener{
 		routerAddress: RouterAddress,
 		channel:       Channel,
 		tlsConfig:     TLSConfig,
@@ -107,20 +107,20 @@ func NewRouterListenerWithConn(
 		log.Printf("Connection is built above TLS")
 		log.Printf("CipherSuite: %s", tls.CipherSuiteName(tlsConn.ConnectionState().CipherSuite))
 	}
-	if err := writeFrame(&RouterFrame{
+	if err := writeFrame(&Frame{
 		Type:    proto.Listen,
 		Channel: Channel,
 	}, routerListener.controlConn); err != nil {
 		return nil, err
 	}
-	frame := RouterFrame{}
+	frame := Frame{}
 	if err := readFrame(&frame, routerListener.controlConn); err != nil {
 		return nil, err
 	}
 	return &routerListener, nil
 }
 
-func (listener *RouterListener) createConnection(network, address string) (net.Conn, error) {
+func (listener *Listener) createConnection(network, address string) (net.Conn, error) {
 	if listener.tlsConfig != nil {
 		return tls.Dial(network, address, listener.tlsConfig)
 	}
@@ -128,44 +128,44 @@ func (listener *RouterListener) createConnection(network, address string) (net.C
 }
 
 // NewListenerWithoutAuth creates a RouterListener structure and try to handshake with Router in `RouterAddress`.
-func NewListenerWithoutAuth(RouterAddress string, Channel string) (*RouterListener, error) {
+func NewListenerWithoutAuth(RouterAddress string, Channel string) (*Listener, error) {
 	return NewRouterListenerWithConn(RouterAddress, Channel, nil)
 }
 
 // NewListener creates a RouterListener.
-func NewListener(RouterAddress string, Channel string, TLSConfig *tls.Config) (*RouterListener, error) {
+func NewListener(RouterAddress string, Channel string, TLSConfig *tls.Config) (*Listener, error) {
 	return NewRouterListenerWithConn(RouterAddress, Channel, TLSConfig)
 }
 
 // Close closes the listener.
-func (listener *RouterListener) Close() error {
+func (listener *Listener) Close() error {
 	listener.mu.Lock()
 	defer listener.mu.Unlock()
 	if listener.isClosed {
 		return nil
 	}
 	listener.isClosed = true
-	writeFrame(&RouterFrame{Type: proto.Close}, listener.controlConn)
+	writeFrame(&Frame{Type: proto.Close}, listener.controlConn)
 	return listener.controlConn.Close()
 }
 
 // Addr returns the listener's address.
-func (listener *RouterListener) Addr() net.Addr {
-	return &RouterAddress{
+func (listener *Listener) Addr() net.Addr {
+	return &Address{
 		Channel: listener.channel,
 	}
 }
 
 // IsClosed returns whether the listener is closed.
-func (listener *RouterListener) IsClosed() bool {
+func (listener *Listener) IsClosed() bool {
 	listener.mu.Lock()
 	defer listener.mu.Unlock()
 	return listener.isClosed
 }
 
 // Accept returns a bridged connection from a dial request.
-func (listener *RouterListener) Accept() (net.Conn, error) {
-	frame := RouterFrame{}
+func (listener *Listener) Accept() (net.Conn, error) {
+	frame := Frame{}
 	for listener != nil {
 		if err := readFrame(&frame, listener.controlConn); err != nil {
 			if err == io.EOF || listener.IsClosed() {
@@ -183,7 +183,7 @@ func (listener *RouterListener) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot fork connection request: %v", err)
 	}
-	if err := writeFrame(&RouterFrame{
+	if err := writeFrame(&Frame{
 		Type:         proto.Bridge,
 		Channel:      listener.channel,
 		ConnectionID: frame.ConnectionID,

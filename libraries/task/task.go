@@ -1,4 +1,4 @@
-// Package framework is an RPC library to execute shell command with ed25519 authentication.
+// Package task is an RPC library to execute shell command with ed25519 authentication.
 package task
 
 import (
@@ -19,7 +19,7 @@ import (
 // CreateShellCommandInterpreter returns an interpreter that will use the `TaskName` template, and substitute all params.
 func CreateShellCommandInterpreter(BaseCommand string) CommandInterpreter {
 	return func(ctx context.Context, command Command) ([]byte, error) {
-		commandSeq, err := shlex.Split(command.TaskName)
+		commandSeq, err := shlex.Split(command.Command)
 		if err != nil {
 			return nil, err
 		}
@@ -78,7 +78,7 @@ func (response *Response) Decode(reader io.Reader) error {
 // Command is a structure to store a command to be executed.
 type Command struct {
 	// Name of the task to be executed.
-	TaskName string `json:"name"`
+	Command string `json:"name"`
 	// For security purpose, client will drop the request if the deadline is passed.
 	Deadline time.Time `json:"expires"`
 

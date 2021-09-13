@@ -18,7 +18,7 @@ func bridge(peerA, peerB net.Conn) {
 	<-ctx.Done()
 }
 
-func handleBridge(routerClient *router.RouterClient, channel string, client net.Conn) {
+func handleBridge(routerClient *router.Client, channel string, client net.Conn) {
 	defer client.Close()
 	conn, err := routerClient.Dial(channel)
 	if err != nil {
@@ -33,7 +33,7 @@ func handleBridge(routerClient *router.RouterClient, channel string, client net.
 	bridge(conn, client)
 }
 
-func Mount(ConfigFile []string, Channel, LocalAddr string) error {
+func mountLocal(ConfigFile []string, Channel, LocalAddr string) error {
 	listener, err := net.Listen("tcp", LocalAddr)
 	if err != nil {
 		return err
@@ -52,7 +52,7 @@ func Mount(ConfigFile []string, Channel, LocalAddr string) error {
 	}
 }
 
-func MountRemote(ConfigFile []string, Channel, RemoteAddr string) error {
+func mountRemote(ConfigFile []string, Channel, RemoteAddr string) error {
 	listener, err := util.CreateListenerFromConfig(ConfigFile, Channel)
 	if err != nil {
 		return err

@@ -16,7 +16,7 @@ type tokenAuthority struct {
 	keyStore *keystore.KeyStore
 }
 
-func (auth *tokenAuthority) CheckPermission(frame *router.RouterFrame, token []byte) bool {
+func (auth *tokenAuthority) CheckPermission(frame *router.Frame, token []byte) bool {
 	if auth.keyStore == nil {
 		return true
 	}

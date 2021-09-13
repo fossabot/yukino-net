@@ -8,16 +8,17 @@ import (
 	"github.com/xpy123993/yukino-net/libraries/router/proto"
 )
 
+// MaxChannelNameLength limits the maxmimum length of a channel name.
 const MaxChannelNameLength = 256
 
-// RouterFrame is the packet using between Router.
-type RouterFrame struct {
+// Frame is the packet using between Router.
+type Frame struct {
 	Type         byte
 	ConnectionID uint64
 	Channel      string
 }
 
-var nopFrame = RouterFrame{Type: proto.Nop}
+var nopFrame = Frame{Type: proto.Nop}
 
 func writeBytes(message []byte, writer io.Writer) error {
 	if err := binary.Write(writer, binary.BigEndian, uint16(len(message))); err != nil {
@@ -48,7 +49,7 @@ func readBytes(reader io.Reader) ([]byte, error) {
 	return buf, nil
 }
 
-func writeFrame(frame *RouterFrame, writer io.Writer) error {
+func writeFrame(frame *Frame, writer io.Writer) error {
 	if _, err := writer.Write([]byte{frame.Type}); err != nil {
 		return err
 	}
@@ -58,7 +59,7 @@ func writeFrame(frame *RouterFrame, writer io.Writer) error {
 	return writeBytes([]byte(frame.Channel), writer)
 }
 
-func readFrame(frame *RouterFrame, reader io.Reader) error {
+func readFrame(frame *Frame, reader io.Reader) error {
 	buf := make([]byte, 1)
 	if n, err := io.ReadFull(reader, buf); err != nil {
 		return err

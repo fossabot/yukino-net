@@ -14,7 +14,7 @@ import (
 	"github.com/xpy123993/yukino-net/libraries/util"
 )
 
-func GenerateCA(CertName string, OutputFolder string) error {
+func cmdGenerateCA(CertName string, OutputFolder string) error {
 	if stats, err := os.Stat(OutputFolder); err != nil {
 		if !os.IsNotExist(err) {
 			return fmt.Errorf("error while probing output folder: %v", err)
@@ -47,7 +47,7 @@ func GenerateCA(CertName string, OutputFolder string) error {
 	return nil
 }
 
-func GenerateCertificate(CertName string, DNSName string, CAFolder string, OutputFolder string) error {
+func cmdGenerateCertificate(CertName string, DNSName string, CAFolder string, OutputFolder string) error {
 	if stats, err := os.Stat(OutputFolder); err != nil {
 		if !os.IsNotExist(err) {
 			return fmt.Errorf("error while probing output folder: %v", err)
@@ -80,7 +80,7 @@ func GenerateCertificate(CertName string, DNSName string, CAFolder string, Outpu
 	}
 	priv, pub, _, err := common.GenerateCertificate(common.GenCertOption{
 		CertName:      CertName,
-		DnsName:       DNSName,
+		DNSName:       DNSName,
 		KeyLength:     4096,
 		IsCA:          false,
 		CACertificate: *caCert,
@@ -101,7 +101,7 @@ func GenerateCertificate(CertName string, DNSName string, CAFolder string, Outpu
 	return nil
 }
 
-func AddCertPermission(KeyFile, CertFile, TokenFile string) error {
+func cmdAddCertPermission(KeyFile, CertFile, TokenFile string) error {
 	cert, err := tls.LoadX509KeyPair(CertFile, KeyFile)
 	if err != nil {
 		return fmt.Errorf("failed to load the certificate: %v", err)

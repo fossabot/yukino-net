@@ -19,10 +19,10 @@ import (
 	"golang.org/x/time/rate"
 )
 
-func InvokeEndPointShellProxyService(ctx context.Context, ConfigFile []string, Channel, Command string, PrivateKey string, timeout time.Duration) (string, error) {
+func cmdInvokeEndpointService(ctx context.Context, ConfigFile []string, Channel, Command string, PrivateKey string, timeout time.Duration) (string, error) {
 	request := task.Request{
 		Command: task.Command{
-			TaskName: Command,
+			Command:  Command,
 			Deadline: time.Now().Add(timeout),
 		},
 	}
@@ -60,7 +60,7 @@ func InvokeEndPointShellProxyService(ctx context.Context, ConfigFile []string, C
 	return string(response.Data), nil
 }
 
-func StartEndPointService(ctx context.Context, ConfigFile []string, Channel string, ACL []string, BaseCommand string) error {
+func cmdStartEndpointService(ctx context.Context, ConfigFile []string, Channel string, ACL []string, BaseCommand string) error {
 	listener, err := util.CreateListenerFromConfig(ConfigFile, Channel)
 	if err != nil {
 		return fmt.Errorf("failed to listen on channel: %v", err)
@@ -87,7 +87,7 @@ func StartEndPointService(ctx context.Context, ConfigFile []string, Channel stri
 	return ctx.Err()
 }
 
-func GetHashToken(Token string) string {
+func cmdGenerateHashToken(Token string) string {
 	data, err := base64.RawURLEncoding.DecodeString(Token)
 	if err != nil {
 		return "invalid"
@@ -95,7 +95,7 @@ func GetHashToken(Token string) string {
 	return base64.RawURLEncoding.EncodeToString(argon2.IDKey(data, []byte("yapp/net/salt"), 1, 64*1024, 4, 64))
 }
 
-func GenerateEd25519() {
+func cmdGenerateEd25519() {
 	pub, priv, err := ed25519.GenerateKey(cryptorand.Reader)
 	if err != nil {
 		log.Fatalf("failed to generate key: %v", err)
@@ -103,7 +103,7 @@ func GenerateEd25519() {
 	fmt.Printf("Public Key: %s\nPrivate Key: %s\n", base64.RawURLEncoding.EncodeToString(pub), base64.RawURLEncoding.EncodeToString(priv))
 }
 
-func StartEndPointWebhook(ctx context.Context, ConfigFile []string, LocalAddr, HashToken string) error {
+func cmdStartEndpointWebhook(ctx context.Context, ConfigFile []string, LocalAddr, HashToken string) error {
 	limiter := rate.NewLimiter(3, 10)
 	http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
 		if !limiter.Allow() {
@@ -116,13 +116,13 @@ func StartEndPointWebhook(ctx context.Context, ConfigFile []string, LocalAddr, H
 			rw.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		if GetHashToken(r.Header.Get("EndPoint-Service-Token")) != HashToken {
+		if cmdGenerateHashToken(r.Header.Get("EndPoint-Service-Token")) != HashToken {
 			time.Sleep(time.Duration(1+2*rand.Float32()) * time.Second)
 			rw.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 		log.Printf("Forwarding command `%s` to channel `%s`.", r.Header.Get("Command"), channel)
-		_, err := InvokeEndPointShellProxyService(ctx, ConfigFile, channel, r.Header.Get("Command"), r.Header.Get("Private-Key"), 5*time.Second)
+		_, err := cmdInvokeEndpointService(ctx, ConfigFile, channel, r.Header.Get("Command"), r.Header.Get("Private-Key"), 5*time.Second)
 		if err != nil {
 			log.Printf("EndPoint service returns error: %v", err)
 		}
@@ -131,14 +131,14 @@ func StartEndPointWebhook(ctx context.Context, ConfigFile []string, LocalAddr, H
 	return http.ListenAndServe(LocalAddr, nil)
 }
 
-func GenerateToken() error {
+func cmdGenerateToken() error {
 	p := make([]byte, 64)
 	_, err := cryptorand.Read(p)
 	if err != nil {
 		return err
 	}
 	token := base64.RawURLEncoding.EncodeToString(p)
-	hashtoken := GetHashToken(token)
+	hashtoken := cmdGenerateHashToken(token)
 	fmt.Printf("Token (EndPoint-Service-Token): %s\nWebHook HashToken: %s\n", token, hashtoken)
 	return nil
 }

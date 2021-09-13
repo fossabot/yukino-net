@@ -16,15 +16,18 @@ import (
 )
 
 const (
-	DefaultDialConnectionTimeout     = 2 * time.Second
+	// DefaultDialConnectionTimeout is the default timeout for a dial operation.
+	DefaultDialConnectionTimeout = 2 * time.Second
+	// DefaultListenConnectionKeepAlive is the default keep alive checking interval for listening threads.
 	DefaultListenConnectionKeepAlive = 20 * time.Second
-	DefaultServerBufferBytes         = 4096
+	// DefaultServerBufferBytes is the default buffer size to exchange between connections.
+	DefaultServerBufferBytes = 4096
 )
 
 // Authority will b e used by the router for ACL control.
 type Authority interface {
 	// Returns if the permission check is passed for `frame`.
-	CheckPermission(frame *RouterFrame, key []byte) bool
+	CheckPermission(frame *Frame, key []byte) bool
 
 	// Returns the expiration time of the key. Router will use this to set a connection deadline.
 	GetExpirationTime(key []byte) time.Time
@@ -32,7 +35,7 @@ type Authority interface {
 
 type noPermissionCheckAuthority struct{}
 
-func (*noPermissionCheckAuthority) CheckPermission(*RouterFrame, []byte) bool { return true }
+func (*noPermissionCheckAuthority) CheckPermission(*Frame, []byte) bool { return true }
 func (*noPermissionCheckAuthority) GetExpirationTime([]byte) time.Time {
 	return time.Now().Add(24 * time.Hour)
 }
@@ -112,7 +115,7 @@ func (router *Router) handleListen(channel string, conn net.Conn) error {
 		return nil
 	}
 
-	frame := RouterFrame{}
+	frame := Frame{}
 	if err := readFrame(&frame, controlConnection.Connection); err != nil {
 		return err
 	}
@@ -126,7 +129,7 @@ func (router *Router) handleListen(channel string, conn net.Conn) error {
 }
 
 // handleDial handles a dial request.
-func (router *Router) handleDial(frame *RouterFrame, conn net.Conn) error {
+func (router *Router) handleDial(frame *Frame, conn net.Conn) error {
 	dialConnection := newConn(conn)
 	if dialConn, ok := conn.(*net.TCPConn); ok {
 		dialConn.SetKeepAlive(true)
@@ -150,7 +153,7 @@ func (router *Router) handleDial(frame *RouterFrame, conn net.Conn) error {
 		delete(router.inflightTable, connectionID)
 		router.mu.Unlock()
 	}()
-	if err := controlConnection.writeFrame(&RouterFrame{
+	if err := controlConnection.writeFrame(&Frame{
 		Type:         proto.Bridge,
 		Channel:      "",
 		ConnectionID: connectionID,
@@ -162,7 +165,7 @@ func (router *Router) handleDial(frame *RouterFrame, conn net.Conn) error {
 	return nil
 }
 
-func (router *Router) handleBridge(frame *RouterFrame, conn net.Conn) error {
+func (router *Router) handleBridge(frame *Frame, conn net.Conn) error {
 	ctx, cancelFn := context.WithCancel(context.Background())
 	defer cancelFn()
 
@@ -177,12 +180,12 @@ func (router *Router) handleBridge(frame *RouterFrame, conn net.Conn) error {
 	}
 	peerConn.Connection.SetDeadline(time.Time{})
 
-	if err := peerConn.writeFrame(&RouterFrame{
+	if err := peerConn.writeFrame(&Frame{
 		Type: proto.Bridge,
 	}); err != nil {
 		return err
 	}
-	if err := connection.writeFrame(&RouterFrame{
+	if err := connection.writeFrame(&Frame{
 		Type: proto.Bridge,
 	}); err != nil {
 		return err
@@ -208,7 +211,7 @@ func (router *Router) handleBridge(frame *RouterFrame, conn net.Conn) error {
 // handleConnection takes the responsibility to close the connection once done.
 func (router *Router) handleConnection(conn net.Conn) error {
 	defer conn.Close()
-	frame := RouterFrame{}
+	frame := Frame{}
 
 	if err := readFrame(&frame, conn); err != nil {
 		return fmt.Errorf("closing connection from %v due to error: %v", conn.RemoteAddr(), err)

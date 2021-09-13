@@ -32,7 +32,7 @@ func acceptAndEqual(listener net.Listener, message string) error {
 	return nil
 }
 
-func dialAndSend(client *router.RouterClient, channel string, message []byte) error {
+func dialAndSend(client *router.Client, channel string, message []byte) error {
 	conn, err := client.Dial(channel)
 	if err != nil {
 		return err
@@ -49,12 +49,12 @@ type myTokenAuthrority struct {
 	clientCert *tls.Certificate
 }
 
-func (*permissionDeniedAuthority) CheckPermission(*router.RouterFrame, []byte) bool { return false }
+func (*permissionDeniedAuthority) CheckPermission(*router.Frame, []byte) bool { return false }
 func (*permissionDeniedAuthority) GetExpirationTime([]byte) time.Time {
 	return time.Now().Add(24 * time.Hour)
 }
 
-func (auth *myTokenAuthrority) CheckPermission(frame *router.RouterFrame, token []byte) bool {
+func (auth *myTokenAuthrority) CheckPermission(frame *router.Frame, token []byte) bool {
 	if auth.clientCert == nil {
 		return true
 	}
@@ -98,7 +98,7 @@ func TestPermissionDenied(t *testing.T) {
 	listener.Close()
 }
 
-func testSuite(t *testing.T, channel string, listener *router.RouterListener, client *router.RouterClient) {
+func testSuite(t *testing.T, channel string, listener *router.Listener, client *router.Client) {
 	pending := sync.WaitGroup{}
 	testMessage := []byte("hello world")
 	pending.Add(1)
@@ -157,7 +157,7 @@ func tlstestSuite(t *testing.T, serverca *x509.CertPool, clientca *x509.CertPool
 	}
 }
 
-func initializeTestSet(t *testing.T) (*router.RouterListener, *router.RouterClient) {
+func initializeTestSet(t *testing.T) (*router.Listener, *router.Client) {
 	listener, err := net.Listen("tcp", ":0")
 	if err != nil {
 		t.Error(err)

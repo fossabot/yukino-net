@@ -51,7 +51,7 @@ func createCertificateSpec(isCA bool, DNSName string, CommonName string) *x509.C
 
 // GenCertOption specifies parameters to generate certificates.
 type GenCertOption struct {
-	DnsName   string
+	DNSName   string
 	CertName  string
 	KeyLength int
 
@@ -63,7 +63,7 @@ type GenCertOption struct {
 
 // GenerateCertificate returns a private key, a public key and the certificate generated under `option`.
 func GenerateCertificate(option GenCertOption) ([]byte, []byte, *x509.Certificate, error) {
-	cert := createCertificateSpec(option.IsCA, option.DnsName, option.CertName)
+	cert := createCertificateSpec(option.IsCA, option.DNSName, option.CertName)
 
 	certPrivKey, err := rsa.GenerateKey(rand.Reader, option.KeyLength)
 	if err != nil {
@@ -102,7 +102,7 @@ func GenerateCertificate(option GenCertOption) ([]byte, []byte, *x509.Certificat
 func GenerateTestCertSuite() ([]byte, []byte, []byte, error) {
 	priv, pub, cert, err := GenerateCertificate(
 		GenCertOption{
-			DnsName:   "test",
+			DNSName:   "test",
 			CertName:  "Test CA",
 			IsCA:      true,
 			KeyLength: 2048,
@@ -112,7 +112,7 @@ func GenerateTestCertSuite() ([]byte, []byte, []byte, error) {
 		return nil, nil, nil, err
 	}
 	serverPriv, serverPub, _, err := GenerateCertificate(GenCertOption{
-		DnsName:       "test",
+		DNSName:       "test",
 		IsCA:          false,
 		KeyLength:     2048,
 		CACertificate: *cert,
