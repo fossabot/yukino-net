@@ -197,6 +197,19 @@ func init() {
 		},
 	}
 
+	var configTokenPath string
+	var generateConfigCmd = &cobra.Command{
+		Use:   "gen-config [listen address] [ca folder] [dns name] [output name]",
+		Short: "Generate a configuration set.",
+		Args:  cobra.ExactArgs(4),
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := generateConfigZIP(args[0], args[1], args[2], configTokenPath, args[3]); err != nil {
+				log.Printf("Error: %v", err)
+				return
+			}
+		},
+	}
+
 	endpointCallCmd.Flags().DurationVarP(&rpcTimeout, "timeout", "t", 3*time.Second, "The timeout to invoke the RPC service.")
 	endpointCallCmd.Flags().StringVarP(&rpcKey, "master-key", "m", "", "If not empty, a signature will be created for server side authentication.")
 	endpointServerCmd.Flags().StringArrayVarP(&rpcPubKey, "master-key", "m", []string{}, "If not empty, the server will only accept ACL from signed by those keys.")
@@ -217,6 +230,8 @@ func init() {
 	certCmd.AddCommand(certGenCertCmd)
 	certCmd.AddCommand(certAddPermRule)
 
+	generateConfigCmd.Flags().StringVarP(&configTokenPath, "token-path", "t", "", "Only works for router config, if specified, router will load tokens from this filename")
+
 	rootCmd.PersistentFlags().StringArrayVarP(&configFile, "config", "c", []string{"./config.json", "/etc/yukino-net/config.json", "$HOME/.yukino-net"}, "Configuration file to join the router network.")
 	rootCmd.AddCommand(socksCmd)
 	rootCmd.AddCommand(mountCmd)
@@ -224,4 +239,5 @@ func init() {
 	rootCmd.AddCommand(endpointCmd)
 	rootCmd.AddCommand(routerCmd)
 	rootCmd.AddCommand(certCmd)
+	rootCmd.AddCommand(generateConfigCmd)
 }
