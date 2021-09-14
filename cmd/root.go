@@ -26,6 +26,10 @@ func init() {
 	var rpcPubKey []string
 	var baseCommand string
 
+	var caName string
+	var certName string
+	var certDNSName string
+
 	var socksCmd = &cobra.Command{
 		Use:   "socks5 [channel]",
 		Short: "Create a socks5 proxy server on specified channel",
@@ -146,11 +150,11 @@ func init() {
 	}
 
 	var certGenCACmd = &cobra.Command{
-		Use:   "new-ca [name] [output folder]",
+		Use:   "new-ca [output folder]",
 		Short: "Create a new CA under output folder",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			err := cmdGenerateCA(args[0], args[1])
+			err := cmdGenerateCA(caName, args[0])
 			if err != nil {
 				log.Printf("Error: %v", err)
 				return
@@ -159,11 +163,11 @@ func init() {
 	}
 
 	var certGenCertCmd = &cobra.Command{
-		Use:   "new-cert [name] [dns name] [ca folder] [output folder]",
+		Use:   "new-cert [ca folder] [output folder]",
 		Short: "Create a new certificate under output folder",
-		Args:  cobra.ExactArgs(4),
+		Args:  cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
-			err := cmdGenerateCertificate(args[0], args[1], args[2], args[3])
+			err := cmdGenerateCertificate(certName, certDNSName, args[0], args[1])
 			if err != nil {
 				log.Printf("Error: %v", err)
 				return
@@ -205,6 +209,9 @@ func init() {
 	mountCmd.AddCommand(mountLocalCmd)
 	mountCmd.AddCommand(mountRemoteCmd)
 
+	certGenCACmd.Flags().StringVarP(&caName, "name", "n", "Yukino Root CA", "The common name on the CA certificate.")
+	certGenCertCmd.Flags().StringVarP(&certName, "name", "n", "Yukino EndPoint", "The common name on the certificate.")
+	certGenCertCmd.Flags().StringVarP(&certDNSName, "dns", "d", "message.yukino.app", "The DNS scope of the certificate.")
 	certCmd.AddCommand(certNewPubKey)
 	certCmd.AddCommand(certGenCACmd)
 	certCmd.AddCommand(certGenCertCmd)
