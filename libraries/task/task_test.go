@@ -24,7 +24,7 @@ func fakeCallback(ctx context.Context, command task.Command) ([]byte, error) {
 	return nil, nil
 }
 
-func generateARequestOrFail(t *testing.T, deadline *time.Time) (task.Request, []byte) {
+func generateARequestOrFail(t *testing.T, deadline *time.Time, privkey []byte) (task.Request, []byte) {
 	request := task.Request{
 		Command: task.Command{
 			Command: "fake task",
@@ -38,53 +38,24 @@ func generateARequestOrFail(t *testing.T, deadline *time.Time) (task.Request, []
 	if err != nil {
 		t.Error(err)
 	}
+	if len(privkey) > 0 {
+		request.SenderPubKey = base64.RawURLEncoding.EncodeToString(privkey[32:])
+		request.SenderSign = base64.RawURLEncoding.EncodeToString(ed25519.Sign(privkey, data))
+	}
 	return request, data
 }
 
-func TestVerifySuccess(t *testing.T) {
+func TestSignVerifySuccess(t *testing.T) {
 	future := time.Now().Add(time.Hour)
-	request, data := generateARequestOrFail(t, &future)
-	request.SenderPubKey = base64.RawURLEncoding.EncodeToString(pubkey)
-	request.SenderSign = base64.RawURLEncoding.EncodeToString(ed25519.Sign(privkey, data))
-
+	request, _ := generateARequestOrFail(t, &future, privkey)
 	if err := request.CheckPermission(map[string]bool{base64.RawURLEncoding.EncodeToString(pubkey): true}); err != nil {
 		t.Errorf("error unexpected: %s", err.Error())
 		t.FailNow()
 	}
 }
 
-func TestSignSuccess(t *testing.T) {
-	future := time.Now().Add(time.Hour)
-	request, data := generateARequestOrFail(t, &future)
-	sign := ed25519.Sign(privkey, data)
-
-	expectedPubKey := base64.RawURLEncoding.EncodeToString(pubkey)
-	expectedSignature := base64.RawURLEncoding.EncodeToString(sign)
-
-	if err := request.Sign(privkey); err != nil {
-		t.Error(err)
-	}
-	if expectedPubKey != request.SenderPubKey {
-		t.Errorf("public key mismatched: %s vs %s", expectedPubKey, request.SenderPubKey)
-	}
-	if expectedSignature != request.SenderSign {
-		t.Errorf("sign mismatched: %s vs %s", expectedSignature, request.SenderSign)
-	}
-}
-
-func TestCanSignAndVerifyRequest(t *testing.T) {
-	future := time.Now().Add(time.Hour)
-	request, _ := generateARequestOrFail(t, &future)
-	if err := request.Sign(privkey); err != nil {
-		t.Error(err)
-	}
-	if err := request.CheckPermission(map[string]bool{base64.RawURLEncoding.EncodeToString(pubkey): true}); err != nil {
-		t.Error(err)
-	}
-}
-
 func TestSignCanFailWithEmptyDeadline(t *testing.T) {
-	request, _ := generateARequestOrFail(t, nil)
+	request, _ := generateARequestOrFail(t, nil, nil)
 	if err := request.Sign(privkey); err != nil {
 		if !strings.Contains(err.Error(), "deadline field must be set for authentication") {
 			t.Errorf("error unexpected: %s", err.Error())
@@ -97,7 +68,7 @@ func TestSignCanFailWithEmptyDeadline(t *testing.T) {
 
 func TestSignCanFailWithPastDeadline(t *testing.T) {
 	past := time.Now().Add(-time.Hour)
-	request, _ := generateARequestOrFail(t, &past)
+	request, _ := generateARequestOrFail(t, &past, nil)
 	if err := request.Sign(privkey); err != nil {
 		if !strings.Contains(err.Error(), "already passed") {
 			t.Errorf("error unexpected: %s", err.Error())
@@ -110,7 +81,7 @@ func TestSignCanFailWithPastDeadline(t *testing.T) {
 
 func TestVerifyEmpty(t *testing.T) {
 	future := time.Now().Add(time.Hour)
-	request, _ := generateARequestOrFail(t, &future)
+	request, _ := generateARequestOrFail(t, &future, nil)
 	if err := request.CheckPermission(map[string]bool{}); err != nil {
 		t.Error(err)
 	}
@@ -119,91 +90,46 @@ func TestVerifyEmpty(t *testing.T) {
 	}
 	if err := request.CheckPermission(map[string]bool{}); err != nil {
 		t.Error(err)
+	}
+}
+
+func expectFail(t *testing.T, request *task.Request, pub []byte, errMessage string) {
+	if err := request.CheckPermission(map[string]bool{base64.RawURLEncoding.EncodeToString(pub): true}); err == nil {
+		t.Error("expect an error here")
+	} else if !strings.Contains(err.Error(), errMessage) {
+		t.Errorf("unexpected error: %s", err.Error())
 	}
 }
 
 func TestVerifyCanFailWithModifiedContent(t *testing.T) {
 	future := time.Now().Add(time.Hour)
-	request, _ := generateARequestOrFail(t, &future)
-	if err := request.Sign(privkey); err != nil {
-		t.Error(err)
-	}
+	request, _ := generateARequestOrFail(t, &future, privkey)
 	request.Command.Command = "changed"
-	if err := request.CheckPermission(map[string]bool{base64.RawURLEncoding.EncodeToString(pubkey): true}); err == nil {
-		t.Error("expect an error here")
-	} else if !strings.Contains(err.Error(), "verification failed") {
-		t.Errorf("unexpected error: %s", err.Error())
-	}
-}
-
-func TestVerifyFailOnInvalidStructure(t *testing.T) {
-	future := time.Now().Add(time.Hour)
-	request, _ := generateARequestOrFail(t, &future)
-	request.SenderPubKey = "abc"
-	request.SenderSign = "def"
-	if err := request.CheckPermission(map[string]bool{"abc": true}); err == nil {
-		t.Error("expect an error here")
-	} else if !strings.Contains(err.Error(), "invalid request") {
-		t.Errorf("unexpected error: %s", err.Error())
-	}
+	expectFail(t, &request, pubkey, "verification failed")
 }
 
 func TestVerifyFailOnNoKeyToVerify(t *testing.T) {
 	future := time.Now().Add(time.Hour)
-	request, _ := generateARequestOrFail(t, &future)
-	request.SenderSign = "def"
-	if err := request.CheckPermission(map[string]bool{"abc": true}); err == nil {
-		t.Error("expect an error here")
-	} else if !strings.Contains(err.Error(), "doesn't include a key") {
-		t.Errorf("unexpected error: %s", err.Error())
-	}
+	request, _ := generateARequestOrFail(t, &future, privkey)
+	request.SenderPubKey = ""
+	expectFail(t, &request, pubkey, "doesn't include a key")
 }
 
 func TestVerifyFailOnDeadlineExpired(t *testing.T) {
 	past := time.Now().Add(-time.Hour)
-	request, data := generateARequestOrFail(t, &past)
-	sign := ed25519.Sign(privkey, data)
-
-	request.SenderPubKey = base64.RawURLEncoding.EncodeToString(pubkey)
-	request.SenderSign = base64.RawURLEncoding.EncodeToString(sign)
-	if err := request.CheckPermission(map[string]bool{base64.RawURLEncoding.EncodeToString(pubkey): true}); err != nil {
-		if !strings.Contains(err.Error(), "contains an expired timestamp") {
-			t.Errorf("error mismatched: %s", err.Error())
-		}
-	} else {
-		t.Error("expect an error")
-	}
+	request, _ := generateARequestOrFail(t, &past, privkey)
+	expectFail(t, &request, pubkey, "contains an expired timestamp")
 }
 
 func TestVerifyFailOnEmptyDeadline(t *testing.T) {
-	request, data := generateARequestOrFail(t, nil)
-	sign := ed25519.Sign(privkey, data)
-
-	request.SenderPubKey = base64.RawURLEncoding.EncodeToString(pubkey)
-	request.SenderSign = base64.RawURLEncoding.EncodeToString(sign)
-	if err := request.CheckPermission(map[string]bool{base64.RawURLEncoding.EncodeToString([]byte(request.SenderPubKey)): true}); err != nil {
-		if !strings.Contains(err.Error(), "doesn't contain") {
-			t.Errorf("error mismatched: %s", err.Error())
-		}
-	} else {
-		t.Error("expect an error")
-	}
+	request, _ := generateARequestOrFail(t, nil, privkey)
+	expectFail(t, &request, pubkey, "doesn't contain")
 }
 
 func TestVerifyFailOnPubkeyNotAllowed(t *testing.T) {
 	future := time.Now().Add(time.Hour)
-	request, data := generateARequestOrFail(t, &future)
-	sign := ed25519.Sign(privkey, data)
-
-	request.SenderPubKey = base64.RawURLEncoding.EncodeToString(pubkey)
-	request.SenderSign = base64.RawURLEncoding.EncodeToString(sign)
-	if err := request.CheckPermission(map[string]bool{"abc": true}); err != nil {
-		if !strings.Contains(err.Error(), "doesn't have permission") {
-			t.Errorf("error mismatched: %s", err.Error())
-		}
-	} else {
-		t.Error("expect an error")
-	}
+	request, _ := generateARequestOrFail(t, &future, privkey)
+	expectFail(t, &request, []byte("abc"), "doesn't have permission")
 }
 
 func TestTaskFailedOnDeadlineExceeded(t *testing.T) {
@@ -300,27 +226,37 @@ func TestProcessTaskASyncRequestSuceedWithDeadline(t *testing.T) {
 	<-done
 }
 
-func BenchmarkProcessTaskWithAuthentication(b *testing.B) {
-	acl := make([]string, b.N)
+func prepareBenchmarkRequests(b *testing.B, auth bool) (task.CommandServiceContext, []task.Request) {
+	acl := []string{}
+	if auth {
+		acl = make([]string, b.N)
+	}
 	requests := make([]task.Request, b.N)
 
 	for i := 0; i < b.N; i++ {
-		pub, priv, err := ed25519.GenerateKey(rand.Reader)
-		if err != nil {
-			b.Error(err)
-		}
-		acl[i] = base64.RawURLEncoding.EncodeToString(pub)
 		requests[i] = task.Request{
 			Command: task.Command{
 				Command:  "echo",
 				Deadline: time.Now().Add(time.Minute),
 			},
 		}
-		if err := requests[i].Sign(priv); err != nil {
-			b.Error(err)
+		if auth {
+			pub, priv, err := ed25519.GenerateKey(rand.Reader)
+			if err != nil {
+				b.Error(err)
+			}
+			acl[i] = base64.RawURLEncoding.EncodeToString(pub)
+			if err := requests[i].Sign(priv); err != nil {
+				b.Error(err)
+			}
 		}
 	}
-	ctx := task.CreateServerContext(acl, 1, task.CommandInterpreter(fakeCallback))
+
+	return task.CreateServerContext(acl, 1, task.CommandInterpreter(fakeCallback)), requests
+}
+
+func BenchmarkProcessTaskWithAuthentication(b *testing.B) {
+	ctx, requests := prepareBenchmarkRequests(b, true)
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
@@ -329,18 +265,7 @@ func BenchmarkProcessTaskWithAuthentication(b *testing.B) {
 }
 
 func BenchmarkProcessTaskWithoutAuthentication(b *testing.B) {
-	acl := make([]string, 0)
-	requests := make([]task.Request, b.N)
-
-	for i := 0; i < b.N; i++ {
-		requests[i] = task.Request{
-			Command: task.Command{
-				Command:  "echo",
-				Deadline: time.Now().Add(time.Minute),
-			},
-		}
-	}
-	ctx := task.CreateServerContext(acl, 1, task.CommandInterpreter(fakeCallback))
+	ctx, requests := prepareBenchmarkRequests(b, false)
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
@@ -349,26 +274,7 @@ func BenchmarkProcessTaskWithoutAuthentication(b *testing.B) {
 }
 
 func BenchmarkProcessTaskASyncWithAuthentication(b *testing.B) {
-	acl := make([]string, b.N)
-	requests := make([]task.Request, b.N)
-
-	for i := 0; i < b.N; i++ {
-		pub, priv, err := ed25519.GenerateKey(rand.Reader)
-		if err != nil {
-			b.Error(err)
-		}
-		acl[i] = base64.RawURLEncoding.EncodeToString(pub)
-		requests[i] = task.Request{
-			Command: task.Command{
-				Command:  "echo",
-				Deadline: time.Now().Add(time.Minute),
-			},
-		}
-		if err := requests[i].Sign(priv); err != nil {
-			b.Error(err)
-		}
-	}
-	ctx := task.CreateServerContext(acl, 8, task.CommandInterpreter(fakeCallback))
+	ctx, requests := prepareBenchmarkRequests(b, true)
 	b.ResetTimer()
 
 	wg := sync.WaitGroup{}
@@ -382,18 +288,7 @@ func BenchmarkProcessTaskASyncWithAuthentication(b *testing.B) {
 }
 
 func BenchmarkProcessTaskASyncWithoutAuthentication(b *testing.B) {
-	acl := make([]string, 0)
-	requests := make([]task.Request, b.N)
-
-	for i := 0; i < b.N; i++ {
-		requests[i] = task.Request{
-			Command: task.Command{
-				Command:  "echo",
-				Deadline: time.Now().Add(time.Minute),
-			},
-		}
-	}
-	ctx := task.CreateServerContext(acl, 8, task.CommandInterpreter(fakeCallback))
+	ctx, requests := prepareBenchmarkRequests(b, false)
 	b.ResetTimer()
 
 	wg := sync.WaitGroup{}
