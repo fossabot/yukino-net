@@ -78,9 +78,15 @@ func cmdStartEndpointService(ctx context.Context, ConfigFile []string, Channel s
 				log.Printf("received invalid reuqest: %v", err)
 				return
 			}
+			log.Printf("Requesting command: %s", request.Command.Command)
 			response := task.FullFillRequest(&serverContext, request)
 			if err := response.Encode(client); err != nil {
 				log.Printf("failed to respond to client: %v", err)
+			}
+			if response.IsError {
+				log.Printf("Command returns error: %s", response.ErrorMessage)
+			} else if len(response.Data) > 0 {
+				log.Printf("Result: %s", string(response.Data))
 			}
 		}(conn)
 	}
