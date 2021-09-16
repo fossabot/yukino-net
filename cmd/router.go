@@ -58,7 +58,7 @@ func cmdStartRoute(ConfigFile []string) error {
 	serviceRouter := router.NewRouter(router.Option{
 		TokenAuthority:            &tokenAuthority{keyStore: keyStore},
 		DialConnectionTimeout:     3 * time.Second,
-		ListenConnectionKeepAlive: 30 * time.Second,
+		ListenConnectionKeepAlive: 10 * time.Second,
 		TLSConfig:                 tlsConfig,
 		ChannelBufferBytes:        4096,
 	})

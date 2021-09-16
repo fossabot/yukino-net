@@ -49,7 +49,12 @@ func newConn(conn net.Conn) *routerConnection {
 
 // probe returns whether the connection is healthy.
 func (conn *routerConnection) probe() bool {
-	return conn.writeFrame(&nopFrame) == nil
+	conn.Connection.SetDeadline(time.Now().Add(DefaultDialConnectionTimeout))
+	defer conn.Connection.SetDeadline(time.Time{})
+	if err := conn.writeFrame(&nopFrame); err != nil {
+		return false
+	}
+	return readFrame(&Frame{}, conn.Connection) == nil
 }
 
 // SpawnConnectionChecker pings the connection periodically, returns and close the channel if any error encountered.

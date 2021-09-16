@@ -97,33 +97,27 @@ func (router *Router) handleListen(channel string, conn net.Conn) error {
 	controlConnection := newConn(conn)
 
 	router.mu.Lock()
-	if _, exists := router.receiverTable[channel]; exists {
-		router.mu.Unlock()
-		return fmt.Errorf("channel %s is already registered", channel)
+	if conn, exists := router.receiverTable[channel]; exists {
+		if conn.probe() {
+			// The listening thread is still active.
+			router.mu.Unlock()
+			return fmt.Errorf("channel %s is already registered", channel)
+		}
+		// Listening thread is dead, trigger the cleanup.
+		conn.close()
 	}
 	router.receiverTable[channel] = controlConnection
 	router.mu.Unlock()
 
 	defer func() {
 		router.mu.Lock()
-		delete(router.receiverTable, channel)
+		if controlConnection == router.receiverTable[channel] {
+			delete(router.receiverTable, channel)
+		}
 		router.mu.Unlock()
 	}()
 
 	controlConnection.SpawnConnectionChecker(router.option.ListenConnectionKeepAlive)
-
-	if !controlConnection.probe() {
-		return nil
-	}
-
-	frame := Frame{}
-	if err := readFrame(&frame, controlConnection.Connection); err != nil {
-		return err
-	}
-	if frame.Type == proto.Close {
-		controlConnection.close()
-		return nil
-	}
 
 	<-controlConnection.Closed
 	return nil
@@ -159,6 +153,7 @@ func (router *Router) handleDial(frame *Frame, conn net.Conn) error {
 		Channel:      "",
 		ConnectionID: connectionID,
 	}); err != nil {
+		controlConnection.close()
 		return err
 	}
 

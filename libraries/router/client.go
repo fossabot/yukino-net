@@ -3,7 +3,6 @@ package router
 import (
 	"crypto/tls"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"sync"
@@ -113,10 +112,6 @@ func NewRouterListenerWithConn(
 	}, routerListener.controlConn); err != nil {
 		return nil, err
 	}
-	frame := Frame{}
-	if err := readFrame(&frame, routerListener.controlConn); err != nil {
-		return nil, err
-	}
 	return &routerListener, nil
 }
 
@@ -168,12 +163,13 @@ func (listener *Listener) Accept() (net.Conn, error) {
 	frame := Frame{}
 	for listener != nil {
 		if err := readFrame(&frame, listener.controlConn); err != nil {
-			if err == io.EOF || listener.IsClosed() {
-				return nil, err
-			}
+			return nil, err
 		}
 		if frame.Type != proto.Nop {
 			break
+		}
+		if err := writeFrame(&nopFrame, listener.controlConn); err != nil {
+			return nil, err
 		}
 	}
 	if frame.Type != proto.Bridge {
