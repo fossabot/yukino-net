@@ -112,6 +112,9 @@ func NewRouterListenerWithConn(
 	}, routerListener.controlConn); err != nil {
 		return nil, err
 	}
+	if err := readFrame(&Frame{}, routerListener.controlConn); err != nil {
+		return nil, err
+	}
 	return &routerListener, nil
 }
 

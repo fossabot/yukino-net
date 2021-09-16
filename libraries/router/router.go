@@ -117,6 +117,10 @@ func (router *Router) handleListen(channel string, conn net.Conn) error {
 		router.mu.Unlock()
 	}()
 
+	if err := controlConnection.writeFrame(&nopFrame); err != nil {
+		return err
+	}
+
 	controlConnection.SpawnConnectionChecker(router.option.ListenConnectionKeepAlive)
 
 	<-controlConnection.Closed
