@@ -56,6 +56,9 @@ func (client *Client) Dial(TargetChannel string) (net.Conn, error) {
 	if err := readFrame(&frame, conn); err != nil {
 		return nil, err
 	}
+	if frame.Type != proto.Bridge {
+		return nil, fmt.Errorf("invalid response")
+	}
 	return conn, nil
 }
 

@@ -75,5 +75,11 @@ func readFrame(frame *Frame, reader io.Reader) error {
 		return err
 	}
 	frame.Channel = string(channelBytes)
+	if frame.Type == proto.Close {
+		if len(frame.Channel) == 0 {
+			return io.EOF
+		}
+		return fmt.Errorf("connection closed: %s", frame.Channel)
+	}
 	return nil
 }

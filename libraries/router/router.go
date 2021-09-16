@@ -101,7 +101,10 @@ func (router *Router) handleListen(channel string, conn net.Conn) error {
 		if conn.probe() {
 			// The listening thread is still active.
 			router.mu.Unlock()
-			return fmt.Errorf("channel %s is already registered", channel)
+			return writeFrame(&Frame{
+				Type:    proto.Close,
+				Channel: fmt.Sprintf("channel %s is already registered", channel),
+			}, controlConnection.Connection)
 		}
 		// Listening thread is dead, trigger the cleanup.
 		conn.close()
@@ -140,7 +143,10 @@ func (router *Router) handleDial(frame *Frame, conn net.Conn) error {
 	controlConnection, exist := router.receiverTable[frame.Channel]
 	if !exist {
 		router.mu.Unlock()
-		return fmt.Errorf("channel %s is not registered", frame.Channel)
+		return writeFrame(&Frame{
+			Type:    proto.Close,
+			Channel: fmt.Sprintf("channel %s is not found", frame.Channel),
+		}, dialConnection.Connection)
 	}
 	connectionID := router.nextConnectionID
 	router.nextConnectionID++
@@ -154,7 +160,6 @@ func (router *Router) handleDial(frame *Frame, conn net.Conn) error {
 	}()
 	if err := controlConnection.writeFrame(&Frame{
 		Type:         proto.Bridge,
-		Channel:      "",
 		ConnectionID: connectionID,
 	}); err != nil {
 		controlConnection.close()
@@ -176,7 +181,10 @@ func (router *Router) handleBridge(frame *Frame, conn net.Conn) error {
 	delete(router.inflightTable, frame.ConnectionID)
 	router.mu.Unlock()
 	if !exist {
-		return fmt.Errorf("handshake failed, might be failed due to timeout")
+		return writeFrame(&Frame{
+			Type:    proto.Close,
+			Channel: "handshake failed, might be failed due to timeout",
+		}, connection.Connection)
 	}
 	peerConn.Connection.SetDeadline(time.Time{})
 
@@ -214,7 +222,8 @@ func (router *Router) handleConnection(conn net.Conn) error {
 	frame := Frame{}
 
 	if err := readFrame(&frame, conn); err != nil {
-		return fmt.Errorf("closing connection from %v due to error: %v", conn.RemoteAddr(), err)
+		log.Printf("closing connection from %v due to error: %v", conn.RemoteAddr(), err)
+		return writeFrame(&Frame{Type: proto.Close, Channel: "invalid request"}, conn)
 	}
 	var key []byte
 	if tlsConn, ok := conn.(*tls.Conn); ok {
@@ -224,8 +233,9 @@ func (router *Router) handleConnection(conn net.Conn) error {
 		key = tlsConn.ConnectionState().PeerCertificates[0].Signature
 	}
 	if !router.option.TokenAuthority.CheckPermission(&frame, key) {
-		return fmt.Errorf("permission denied: peer token `%s` from address `%s`",
+		log.Printf("permission denied: peer token `%s` from address `%s`",
 			keystore.HashKey(key), conn.RemoteAddr().String())
+		return writeFrame(&Frame{Type: proto.Close, Channel: "permission denied"}, conn)
 	}
 
 	switch frame.Type {
