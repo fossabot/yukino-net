@@ -12,7 +12,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-s -w" -o yukino-net .
 RUN mkdir -p /etc/yukino-net
 
-FROM gcr.io/distroless/base
+FROM gcr.io/distroless/base:nonroot
 
 WORKDIR /bin
 COPY --from=builder /app/yukino-net .
