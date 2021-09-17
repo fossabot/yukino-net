@@ -3,6 +3,7 @@ package router
 import (
 	"crypto/tls"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"sync"
@@ -66,11 +67,13 @@ func (client *Client) Dial(TargetChannel string) (net.Conn, error) {
 type Listener struct {
 	routerAddress string
 	channel       string
-	controlConn   net.Conn
 	tlsConfig     *tls.Config
+	acceptorChan  chan net.Conn
+	closedSig     chan struct{}
 
-	mu       sync.Mutex
-	isClosed bool
+	mu              sync.Mutex
+	isClosed        bool
+	activeAcceptors int
 }
 
 // Address represents an address in Router network.
@@ -96,28 +99,33 @@ func NewRouterListenerWithConn(
 		routerAddress: RouterAddress,
 		channel:       Channel,
 		tlsConfig:     TLSConfig,
+		acceptorChan:  make(chan net.Conn),
+		closedSig:     make(chan struct{}),
 
-		mu:       sync.Mutex{},
-		isClosed: false,
+		mu:              sync.Mutex{},
+		isClosed:        false,
+		activeAcceptors: 0,
 	}
-	var err error
-	routerListener.controlConn, err = routerListener.createConnection("tcp", RouterAddress)
+	controlConn, err := routerListener.createConnection("tcp", RouterAddress)
 	if err != nil {
 		return nil, err
 	}
-	if tlsConn, ok := routerListener.controlConn.(*tls.Conn); ok {
+	if tlsConn, ok := controlConn.(*tls.Conn); ok {
 		log.Printf("Connection is built above TLS")
 		log.Printf("CipherSuite: %s", tls.CipherSuiteName(tlsConn.ConnectionState().CipherSuite))
 	}
 	if err := writeFrame(&Frame{
 		Type:    proto.Listen,
 		Channel: Channel,
-	}, routerListener.controlConn); err != nil {
+	}, controlConn); err != nil {
+		controlConn.Close()
 		return nil, err
 	}
-	if err := readFrame(&Frame{}, routerListener.controlConn); err != nil {
+	if err := readFrame(&Frame{}, controlConn); err != nil {
+		controlConn.Close()
 		return nil, err
 	}
+	go routerListener.spawnController(controlConn)
 	return &routerListener, nil
 }
 
@@ -146,8 +154,9 @@ func (listener *Listener) Close() error {
 		return nil
 	}
 	listener.isClosed = true
-	writeFrame(&Frame{Type: proto.Close}, listener.controlConn)
-	return listener.controlConn.Close()
+	close(listener.acceptorChan)
+	close(listener.closedSig)
+	return nil
 }
 
 // Addr returns the listener's address.
@@ -164,36 +173,72 @@ func (listener *Listener) IsClosed() bool {
 	return listener.isClosed
 }
 
+func (listener *Listener) incAcceptorCount(cnt int) {
+	listener.mu.Lock()
+	listener.activeAcceptors += cnt
+	listener.mu.Unlock()
+}
+
+func (listener *Listener) acceptorCount() int {
+	listener.mu.Lock()
+	defer listener.mu.Unlock()
+	return listener.activeAcceptors
+}
+
+func (listener *Listener) spawnController(controlConn net.Conn) {
+	defer listener.Close()
+	go func() {
+		<-listener.closedSig
+		controlConn.Close()
+	}()
+	frame := Frame{}
+	for !listener.IsClosed() {
+		if err := readFrame(&frame, controlConn); err != nil {
+			listener.Close()
+			return
+		}
+		if frame.Type == proto.Nop {
+			if err := writeFrame(&nopFrame, controlConn); err != nil {
+				listener.Close()
+				return
+			}
+		}
+		if frame.Type == proto.Bridge && listener.acceptorCount() > 0 {
+			go func(connectionID uint64) {
+				conn, err := listener.createConnection("tcp", listener.routerAddress)
+				if err != nil {
+					log.Printf("cannot fork connection request: %v", err)
+					listener.Close()
+				}
+				if err := writeFrame(&Frame{
+					Type:         proto.Bridge,
+					Channel:      listener.channel,
+					ConnectionID: connectionID,
+				}, conn); err != nil {
+					log.Printf("failed to handshake: %v", err)
+					conn.Close()
+					return
+				}
+				frame := Frame{}
+				if err := readFrame(&frame, conn); err != nil {
+					log.Printf("failed while finishing handshake: %v", err)
+					conn.Close()
+					return
+				}
+				listener.acceptorChan <- conn
+			}(frame.ConnectionID)
+		}
+	}
+}
+
 // Accept returns a bridged connection from a dial request.
 func (listener *Listener) Accept() (net.Conn, error) {
-	frame := Frame{}
-	for listener != nil {
-		if err := readFrame(&frame, listener.controlConn); err != nil {
-			return nil, err
-		}
-		if frame.Type != proto.Nop {
-			break
-		}
-		if err := writeFrame(&nopFrame, listener.controlConn); err != nil {
-			return nil, err
-		}
+	listener.incAcceptorCount(1)
+	defer listener.incAcceptorCount(-1)
+
+	conn, ok := <-listener.acceptorChan
+	if ok {
+		return conn, nil
 	}
-	if frame.Type != proto.Bridge {
-		return nil, fmt.Errorf("server returns invalid request type: %d, expect bridge: %v", frame.Type, frame)
-	}
-	conn, err := listener.createConnection("tcp", listener.routerAddress)
-	if err != nil {
-		return nil, fmt.Errorf("cannot fork connection request: %v", err)
-	}
-	if err := writeFrame(&Frame{
-		Type:         proto.Bridge,
-		Channel:      listener.channel,
-		ConnectionID: frame.ConnectionID,
-	}, conn); err != nil {
-		return nil, fmt.Errorf("failed to handshake: %v", err)
-	}
-	if err := readFrame(&frame, conn); err != nil {
-		return nil, fmt.Errorf("failed while finishing handshake: %v", err)
-	}
-	return conn, nil
+	return nil, io.EOF
 }

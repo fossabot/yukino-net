@@ -318,13 +318,23 @@ func BenchmarkSmallConnection(b *testing.B) {
 		b.Fatalf(err.Error())
 	}
 
-	testMessage := make([]byte, 32)
+	testMessage := make([]byte, 16)
 
 	b.ResetTimer()
 
 	go func() {
+		p := make([]byte, 16)
 		for i := 0; i < b.N; i++ {
-			acceptAndEqual(testListener, string(testMessage))
+			conn, err := testListener.Accept()
+			if err != nil {
+				b.Fail()
+			}
+			go func(conn net.Conn) {
+				if _, err := conn.Read(p); err != nil {
+					b.Error(err)
+				}
+				conn.Close()
+			}(conn)
 		}
 		pending.Done()
 	}()
@@ -333,7 +343,12 @@ func BenchmarkSmallConnection(b *testing.B) {
 
 	pending.Add(1)
 	for i := 0; i < b.N; i++ {
-		dialAndSend(testClient, "test-channel", testMessage)
+		conn, err := testClient.Dial("test-channel")
+		if err != nil {
+			b.Fail()
+		}
+		conn.Write(testMessage)
+		conn.Close()
 	}
 	pending.Wait()
 }
