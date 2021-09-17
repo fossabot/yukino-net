@@ -75,7 +75,7 @@ func readFrame(frame *Frame, reader io.Reader) error {
 		if len(frame.Payload) == 0 {
 			return io.EOF
 		}
-		return fmt.Errorf("connection closed: %s", frame.Payload)
+		return fmt.Errorf("remote error: %s", frame.Payload)
 	}
 	return nil
 }
