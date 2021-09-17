@@ -1,4 +1,4 @@
-name: "build docker"
+name: "Docker Image"
 
 # Controls when the workflow will run
 on:
