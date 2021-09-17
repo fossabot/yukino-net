@@ -50,7 +50,7 @@ func readBytes(reader io.Reader) ([]byte, error) {
 }
 
 func writeFrame(frame *Frame, writer io.Writer) error {
-	if _, err := writer.Write([]byte{frame.Type}); err != nil {
+	if err := binary.Write(writer, binary.BigEndian, frame.Type); err != nil {
 		return err
 	}
 	if err := binary.Write(writer, binary.BigEndian, frame.ConnectionID); err != nil {
@@ -60,13 +60,9 @@ func writeFrame(frame *Frame, writer io.Writer) error {
 }
 
 func readFrame(frame *Frame, reader io.Reader) error {
-	buf := make([]byte, 1)
-	if n, err := io.ReadFull(reader, buf); err != nil {
+	if err := binary.Read(reader, binary.BigEndian, &frame.Type); err != nil {
 		return err
-	} else if n != 1 {
-		return fmt.Errorf("cannot read control byte")
 	}
-	frame.Type = buf[0]
 	if err := binary.Read(reader, binary.BigEndian, &frame.ConnectionID); err != nil {
 		return err
 	}

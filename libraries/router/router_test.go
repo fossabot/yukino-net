@@ -318,18 +318,18 @@ func BenchmarkSmallConnection(b *testing.B) {
 		b.Fatalf(err.Error())
 	}
 
-	testMessage := make([]byte, 16)
+	testMessage := make([]byte, 8)
 
 	b.ResetTimer()
 
 	go func() {
-		p := make([]byte, 16)
 		for i := 0; i < b.N; i++ {
 			conn, err := testListener.Accept()
 			if err != nil {
 				b.Fail()
 			}
 			go func(conn net.Conn) {
+				p := make([]byte, 8)
 				if _, err := conn.Read(p); err != nil {
 					b.Error(err)
 				}
