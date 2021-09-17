@@ -49,7 +49,7 @@ func (client *Client) Dial(TargetChannel string) (net.Conn, error) {
 	}
 	if err := writeFrame(&Frame{
 		Type:    proto.Dial,
-		Channel: TargetChannel,
+		Payload: TargetChannel,
 	}, conn); err != nil {
 		return nil, err
 	}
@@ -116,7 +116,7 @@ func NewRouterListenerWithConn(
 	}
 	if err := writeFrame(&Frame{
 		Type:    proto.Listen,
-		Channel: Channel,
+		Payload: Channel,
 	}, controlConn); err != nil {
 		controlConn.Close()
 		return nil, err
@@ -212,7 +212,7 @@ func (listener *Listener) spawnController(controlConn net.Conn) {
 				}
 				if err := writeFrame(&Frame{
 					Type:         proto.Bridge,
-					Channel:      listener.channel,
+					Payload:      listener.channel,
 					ConnectionID: connectionID,
 				}, conn); err != nil {
 					log.Printf("failed to handshake: %v", err)

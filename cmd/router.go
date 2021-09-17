@@ -22,11 +22,11 @@ func (auth *tokenAuthority) CheckPermission(frame *router.Frame, token []byte) b
 	}
 	switch frame.Type {
 	case proto.Dial:
-		return auth.keyStore.CheckPermission(keystore.InvokeAction, frame.Channel, token)
+		return auth.keyStore.CheckPermission(keystore.InvokeAction, frame.Payload, token)
 	case proto.Bridge:
-		return auth.keyStore.CheckPermission(keystore.ListenAction, frame.Channel, token)
+		return auth.keyStore.CheckPermission(keystore.ListenAction, frame.Payload, token)
 	case proto.Listen:
-		return auth.keyStore.CheckPermission(keystore.ListenAction, frame.Channel, token)
+		return auth.keyStore.CheckPermission(keystore.ListenAction, frame.Payload, token)
 	}
 	return false
 }

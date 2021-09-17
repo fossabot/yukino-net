@@ -15,7 +15,7 @@ const MaxChannelNameLength = 256
 type Frame struct {
 	Type         byte
 	ConnectionID uint64
-	Channel      string
+	Payload      string
 }
 
 var nopFrame = Frame{Type: proto.Nop}
@@ -56,7 +56,7 @@ func writeFrame(frame *Frame, writer io.Writer) error {
 	if err := binary.Write(writer, binary.BigEndian, frame.ConnectionID); err != nil {
 		return err
 	}
-	return writeBytes([]byte(frame.Channel), writer)
+	return writeBytes([]byte(frame.Payload), writer)
 }
 
 func readFrame(frame *Frame, reader io.Reader) error {
@@ -74,12 +74,12 @@ func readFrame(frame *Frame, reader io.Reader) error {
 	if err != nil {
 		return err
 	}
-	frame.Channel = string(channelBytes)
+	frame.Payload = string(channelBytes)
 	if frame.Type == proto.Close {
-		if len(frame.Channel) == 0 {
+		if len(frame.Payload) == 0 {
 			return io.EOF
 		}
-		return fmt.Errorf("connection closed: %s", frame.Channel)
+		return fmt.Errorf("connection closed: %s", frame.Payload)
 	}
 	return nil
 }
