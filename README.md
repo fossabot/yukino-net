@@ -3,6 +3,7 @@
 [![Go](https://github.com/xpy123993/yukino-net/actions/workflows/go.yml/badge.svg)](https://github.com/xpy123993/yukino-net/actions/workflows/go.yml)
 [![Create Debian Packages](https://github.com/xpy123993/yukino-net/actions/workflows/debian.yml/badge.svg)](https://github.com/xpy123993/yukino-net/actions/workflows/debian.yml)
 [![Docker Image](https://github.com/xpy123993/yukino-net/actions/workflows/docker.yml/badge.svg)](https://github.com/xpy123993/yukino-net/actions/workflows/docker.yml)
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fxpy123993%2Fyukino-net.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fxpy123993%2Fyukino-net?ref=badge_shield)
 
 ## 简介
 
@@ -144,3 +145,7 @@ curl -I -H "EndPoint-Service-Token: [Token A]" -H "Command: echo hello world" -H
 ## 免责声明
 
 本软件严禁用于一切侵权、侵害他人利益、违法等不当行为，本软件及本软件作者不承担由此引起的直接和间接责任。
+
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fxpy123993%2Fyukino-net.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fxpy123993%2Fyukino-net?ref=badge_large)
