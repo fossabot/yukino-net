@@ -143,4 +143,4 @@ curl -I -H "EndPoint-Service-Token: [Token A]" -H "Command: echo hello world" -H
 
 ## 免责声明
 
-请勿用于非法的用途，否则造成的严重后果与本项目无关。
+严禁用于一切侵权、侵害他人利益、违法等不当行为，本软件及本软件作者不承担由此引起的直接和间接责任。
