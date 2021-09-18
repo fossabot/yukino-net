@@ -123,6 +123,24 @@ yukino-net endpoint serve endpoint.A -m [Token C]
 curl -I -H "EndPoint-Service-Token: [Token A]" -H "Command: echo hello world" -H "Private-Key: [Token D]" http://[WebServer Address]/endpoint.A
 ```
 
+## 附录
+
+### 使用 IFTTT + Google Assistant
+
+在 IFTTT 中，设定一个 Google Assitant 的触发条件，如 `Say a sentence.`
+
+在触发动作中选择 `Make a web request`, 其中：
+
+- Method 为 POST
+- Header 为
+  ```
+  EndPoint-Service-Token: [Token A]
+  Private-Key: [Token D]
+  Command: [要执行的 Command]
+  ```
+
+保存即可。
+
 ## 免责声明
 
 请勿用于非法的用途，否则造成的严重后果与本项目无关。
